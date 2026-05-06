@@ -41,3 +41,47 @@ canvas {
   height: 100vh;
   background: transparent;
 }
+
+/* Wallet Connect Modal Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+#wallet-connect-modal button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f9a825 0%, #f6851b 100%);
+  box-shadow: 0 6px 20px rgba(246, 133, 27, 0.4);
+  transform: translateY(-2px);
+}
+
+#wallet-connect-modal button:active:not(:disabled) {
+  transform: translateY(0px);
+}
+
+#wallet-connect-modal button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#wallet-connect-modal a {
+  cursor: pointer;
+}
+
+#wallet-connect-modal a:hover {
+  text-decoration: underline;
+}
