@@ -36,6 +36,8 @@ import {
 import { WeaponSystem } from "./systems/WeaponSystem";
 import { ScoreSystem } from "./systems/ScoreSystem";
 import { HudRenderer, type HudPresentationState } from "./ui/HUD";
+import { SoundManager } from "./audio/SoundManager";
+import { WalletContext } from "./web3";
 import {
   CANVAS_DEFAULT_HEIGHT_PX,
   CANVAS_DEFAULT_WIDTH_PX,
@@ -55,8 +57,16 @@ import {
 } from "./utils/constants";
 import { Debug } from "./utils/debug";
 import { circleIntersectsAabb, clampScalar, squaredDistance } from "./utils/math";
-import { getConnectedWalletAddress } from "./platform/wallet/WalletSession";
+import { getActiveWalletLabel } from "./platform/leaderboard/LeaderboardStore";
+import {
+  resolveDisplayName,
+  loadPlayerProfile,
+} from "./platform/profile/ProfileStore";
+import { getScoreTitle } from "./utils/scoreTitle";
 import type { PickupKind } from "./data/pickups";
+import { requireEnemy } from "./data/enemies";
+import { requirePassive } from "./data/passives";
+import { requireWeapon } from "./data/weapons";
 import {
   clearCanvas,
   drawInfiniteCheckerboard,
@@ -125,6 +135,8 @@ export class Game {
   private readonly gameOverUi: GameOverUI;
 
   private readonly scoreSystem = new ScoreSystem();
+
+  private readonly sound = SoundManager.getInstance();
 
   private gameOverResolved = false;
 
@@ -242,6 +254,9 @@ export class Game {
       playerOriginY: 0,
       aimX: 1,
       aimY: 0,
+      spawnSkillBurst: (worldX: number, worldY: number, color: string, scale?: number): void => {
+        this.combatVfx.spawnSkillBurst(worldX, worldY, color, scale);
+      },
       applyWeaponDamage: (packet: EnemyDamagePacket): void => {
         this.applyStrikeDamage(
           packet.enemy,
@@ -296,6 +311,7 @@ export class Game {
    * Brings the RAF loop online.
    */
   start(): void {
+    this.sound.unlock();
     this.loop.start();
     Debug.log("Game loop running");
   }
@@ -334,17 +350,15 @@ export class Game {
       this.player.hp <= 0 &&
       !this.gameOverUi.isBannerOpen()
     ) {
-      const wallet = getConnectedWalletAddress() ?? "0xGuest";
+      const wallet = getActiveWalletLabel();
+      const capturedAt = Date.now();
       const finalScore = this.scoreSystem.saveRun(
         wallet,
         this.player.survivorLevel,
       );
       this.gameOverResolved = true;
-      this.gameOverUi.present(
-        finalScore,
-        this.scoreSystem.getKillCount(),
-        this.scoreSystem.getSurvivedMs(),
-      );
+      this.gameOverUi.present(this.buildRunCardSummary(finalScore, capturedAt));
+      this.sound.play("gameOver");
     }
 
     const worldSimActive = !this.levelUi.isBannerOpen() && !this.gameOverUi.isBannerOpen();
@@ -412,12 +426,14 @@ export class Game {
           this.player.receiveDamage(enemy.baseDamage);
           if (this.player.hp < hpBefore) {
             this.playerHitFlashRemainMs = 220;
+            this.hud.notifyHit();
             this.combatVfx.spawnImpactBurst(
               this.player.x,
               this.player.y,
               "#ff6b7a",
               1.5,
             );
+            this.sound.play("hit");
           }
         }
 
@@ -446,6 +462,9 @@ export class Game {
 
   private healPlayer(amount: number): void {
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + amount);
+    if (amount > 0) {
+      this.sound.play("pickup");
+    }
   }
 
   private freezeAllEnemies(durationMs: number): void {
@@ -470,6 +489,7 @@ export class Game {
     }
 
     this.floatingDamage.spawnFloater(this.player.x, this.player.y, "ROSARY");
+    this.sound.play("pickup");
 
     for (const enemy of victims) {
       if (!enemy.active) {
@@ -482,8 +502,9 @@ export class Game {
       this.combatVfx.spawnDeathBurst(gx, gy, enemy.silhouetteHex, enemy.elite);
       enemy.resetForPool();
       this.enemyPool.release(enemy);
-      this.scoreSystem.registerKill();
+      this.scoreSystem.registerKill(enemy.enemyTypeId || "unknown");
       this.xpAuthority.spawnGem(gx, gy, gemYield);
+      this.sound.play("kill");
     }
   }
 
@@ -523,10 +544,37 @@ export class Game {
     );
 
     this.gemPool.forEachActive((gem) => {
+      const burstAlpha = Math.max(0, gem.burstRemainMs / 180);
+      const pullAlpha = Math.max(0.16, Math.min(0.92, 0.45 + burstAlpha * 0.35));
+      const trailX = gem.x - gem.vx * 0.018;
+      const trailY = gem.y - gem.vy * 0.018;
+
+      ctx.save();
+      ctx.globalAlpha = pullAlpha * 0.55;
+      ctx.strokeStyle = "#dffcff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(trailX, trailY);
+      ctx.lineTo(gem.x, gem.y);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = 0.34 + burstAlpha * 0.14;
+      ctx.strokeStyle = burstAlpha > 0 ? "#f4fbff" : "#8ef0a2";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(gem.x, gem.y, GEM_RADIUS_PX + 4 + burstAlpha * 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = 0.95;
       ctx.fillStyle = GEM_PLACEHOLDER_FILL;
       ctx.beginPath();
       ctx.arc(gem.x, gem.y, GEM_RADIUS_PX, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     });
 
     this.enemyPool.forEachActive((enemy) => {
@@ -849,7 +897,7 @@ export class Game {
       return;
     }
 
-    this.scoreSystem.registerKill();
+      this.scoreSystem.registerKill(enemy.enemyTypeId || "unknown");
 
     const gx = enemy.x;
     const gy = enemy.y;
@@ -871,6 +919,66 @@ export class Game {
     }
   }
 
+  private buildRunCardSummary(
+    finalScore: number,
+    capturedAt: number,
+  ): import("./systems/RunCardRenderer").RunCardSummary {
+    const wallet = WalletContext.getWallet();
+    const profile = loadPlayerProfile();
+    const resolvedHandle = wallet?.xHandle ?? profile.xHandle;
+    const displayName = resolveDisplayName(wallet?.address ?? null, resolvedHandle);
+    const xHandle = resolvedHandle ?? null;
+    const kills = this.scoreSystem.getKillCount();
+    const survivedMs = this.scoreSystem.getSurvivedMs();
+    const rankTitle = getScoreTitle(finalScore).title;
+    const serialNumber = buildRunCardSerial({
+      walletAddress: wallet?.address ?? getActiveWalletLabel(),
+      score: finalScore,
+      kills,
+      survivedMs,
+      capturedAt,
+    });
+
+    const skills: import("./systems/RunCardRenderer").RunCardSkill[] = [
+      ...this.player.weaponLanes.map((lane) => ({
+        label: requireWeapon(lane.id).name,
+        level: lane.level,
+        kind: "weapon" as const,
+      })),
+      ...this.player.passiveLanes.map((lane) => ({
+        label: requirePassive(lane.id).name,
+        level: lane.level,
+        kind: "passive" as const,
+      })),
+    ];
+
+    const enemyKills = this.scoreSystem.getKillBreakdown().map((entry) => ({
+      label: (() => {
+        try {
+          return requireEnemy(entry.enemyId).displayName;
+        } catch {
+          return entry.enemyId;
+        }
+      })(),
+      count: entry.kills,
+    }));
+
+    return {
+      displayName,
+      walletAddress: wallet?.address ?? getActiveWalletLabel(),
+      xHandle,
+      serialNumber,
+      capturedAt,
+      rankTitle,
+      score: finalScore,
+      kills,
+      survivedMs,
+      level: this.player.survivorLevel,
+      skills,
+      enemyKills,
+    };
+  }
+
   private kickPromotionPipeline(): void {
     if (this.levelUi.isBannerOpen()) {
       return;
@@ -881,6 +989,7 @@ export class Game {
     }
 
     this.levelUi.presentOffers(this.levelOfferBuilder.composeOffers());
+    this.sound.play("levelUp");
   }
 
   private refreshSurvivorDerivedStats(): void {
@@ -944,4 +1053,31 @@ export class Game {
 
     return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
   }
+}
+
+function buildRunCardSerial(seed: {
+  walletAddress: string;
+  score: number;
+  kills: number;
+  survivedMs: number;
+  capturedAt: number;
+}): string {
+  const input = [
+    seed.walletAddress,
+    seed.score,
+    seed.kills,
+    seed.survivedMs,
+    seed.capturedAt,
+  ].join("|");
+  const hash = hashString(input);
+  return `RNS-${hash.toString(16).toUpperCase().padStart(8, "0")}`;
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }

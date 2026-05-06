@@ -88,7 +88,7 @@ export const PLAYER_DEFAULT_GROWTH = 2;
 
 export const PLAYER_START_LUCK = 1;
 
-export const LEVEL_CARD_OFFER_COUNT = 4;
+export const LEVEL_CARD_OFFER_COUNT = 3;
 
 export const INITIAL_WHIP_WEAPON_LEVEL = 1;
 

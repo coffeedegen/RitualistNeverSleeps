@@ -31,21 +31,38 @@ export class CombatVfxSystem {
 
   private readonly sparks: SparkEffect[] = [];
 
+  spawnSkillBurst(x: number, y: number, coreColor: string, burstScale = 1): void {
+    const size = Math.max(0.7, burstScale);
+    this.bursts.push({
+      x,
+      y,
+      baseRadius: 5 + size * 2.5,
+      radiusGrowPx: 18 + size * 10,
+      ttlRemainMs: 150,
+      ttlStartMs: 150,
+      coreColor,
+      glowColor: this.withAlpha(coreColor, 0.22),
+      ringWidth: 1.4 + size * 0.35,
+      spinRad: Math.random() * Math.PI * 2,
+    });
+    this.spawnSparkFan(x, y, coreColor, 3 + Math.round(size), 34 + size * 14);
+  }
+
   spawnImpactBurst(x: number, y: number, coreColor: string, intensity = 1): void {
     const strength = Math.max(0.6, intensity);
     this.bursts.push({
       x,
       y,
-      baseRadius: 8 + strength * 5,
-      radiusGrowPx: 38 + strength * 20,
-      ttlRemainMs: 220,
-      ttlStartMs: 220,
+      baseRadius: 7 + strength * 4,
+      radiusGrowPx: 30 + strength * 16,
+      ttlRemainMs: 190,
+      ttlStartMs: 190,
       coreColor,
-      glowColor: this.withAlpha(coreColor, 0.35),
-      ringWidth: 2 + strength * 0.75,
+      glowColor: this.withAlpha(coreColor, 0.28),
+      ringWidth: 1.8 + strength * 0.6,
       spinRad: Math.random() * Math.PI * 2,
     });
-    this.spawnSparkFan(x, y, coreColor, 5 + Math.round(strength * 2), 58 + strength * 28);
+    this.spawnSparkFan(x, y, coreColor, 4 + Math.round(strength * 2), 48 + strength * 22);
   }
 
   spawnDeathBurst(x: number, y: number, coreColor: string, elite = false): void {
@@ -54,16 +71,16 @@ export class CombatVfxSystem {
     this.bursts.push({
       x,
       y,
-      baseRadius: elite ? 12 : 10,
-      radiusGrowPx: elite ? 92 : 68,
+      baseRadius: elite ? 11 : 9,
+      radiusGrowPx: elite ? 78 : 60,
       ttlRemainMs: ttl,
       ttlStartMs: ttl,
       coreColor: this.withAlpha(color, 0.9),
-      glowColor: this.withAlpha(color, 0.28),
-      ringWidth: elite ? 3.2 : 2.4,
+      glowColor: this.withAlpha(color, 0.22),
+      ringWidth: elite ? 2.8 : 2.2,
       spinRad: Math.random() * Math.PI * 2,
     });
-    this.spawnSparkFan(x, y, color, elite ? 12 : 8, elite ? 94 : 72);
+    this.spawnSparkFan(x, y, color, elite ? 10 : 7, elite ? 84 : 66);
   }
 
   spawnPickupBurst(pickupKind: PickupKind, x: number, y: number): void {
@@ -72,15 +89,15 @@ export class CombatVfxSystem {
       x,
       y,
       baseRadius: 7,
-      radiusGrowPx: 44,
-      ttlRemainMs: 240,
-      ttlStartMs: 240,
+      radiusGrowPx: 38,
+      ttlRemainMs: 210,
+      ttlStartMs: 210,
       coreColor: style.core,
       glowColor: style.glow,
-      ringWidth: 2.2,
+      ringWidth: 2,
       spinRad: Math.random() * Math.PI * 2,
     });
-    this.spawnSparkFan(x, y, style.core, 6, 58);
+    this.spawnSparkFan(x, y, style.core, 5, 52);
   }
 
   update(dtMs: number): void {
@@ -94,8 +111,8 @@ export class CombatVfxSystem {
       spark.ttlRemainMs -= dtMs;
       spark.x += spark.vx * dtSec;
       spark.y += spark.vy * dtSec;
-      spark.vx *= 0.985;
-      spark.vy = spark.vy * 0.985 + 24 * dtSec;
+      spark.vx *= 0.982;
+      spark.vy = spark.vy * 0.982 + 20 * dtSec;
     }
 
     for (let i = this.bursts.length - 1; i >= 0; i -= 1) {
@@ -173,16 +190,16 @@ export class CombatVfxSystem {
   ): void {
     for (let i = 0; i < count; i += 1) {
       const theta = (Math.PI * 2 * i) / count + Math.random() * 0.2;
-      const speed = speedPxPerSec * (0.65 + Math.random() * 0.5);
+      const speed = speedPxPerSec * (0.58 + Math.random() * 0.42);
       this.sparks.push({
         x,
         y,
         vx: Math.cos(theta) * speed,
-        vy: Math.sin(theta) * speed - 24,
-        ttlRemainMs: 260 + Math.random() * 100,
-        ttlStartMs: 360,
+        vy: Math.sin(theta) * speed - 20,
+        ttlRemainMs: 220 + Math.random() * 90,
+        ttlStartMs: 320,
         color,
-        sizePx: 5 + Math.random() * 3,
+        sizePx: 4.5 + Math.random() * 2.5,
       });
     }
   }

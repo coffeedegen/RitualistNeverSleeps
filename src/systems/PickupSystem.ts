@@ -89,6 +89,7 @@ export class PickupSystem {
       const meta = requirePickup(pickup.pickupKind);
 
       ctx.save();
+      ctx.globalAlpha = 0.88;
       ctx.beginPath();
       ctx.arc(pickup.x, pickup.y, pickup.radiusPx, 0, Math.PI * 2);
       ctx.fillStyle = pickup.fillHex;
@@ -112,6 +113,14 @@ export class PickupSystem {
           break;
       }
 
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.32;
+      ctx.strokeStyle = pickup.pickupKind === "vacuum" ? "#dffcff" : "#fff8d8";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, pickup.radiusPx + 5, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
       ctx.save();
       ctx.globalAlpha = 0.85;

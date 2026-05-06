@@ -92,6 +92,12 @@ interface LashStrikeVisual {
   a: number;
   b: number;
   angle: number;
+  tipX: number;
+  tipY: number;
+  tailX: number;
+  tailY: number;
+  curlDir: number;
+  recoilPx: number;
   ttlMs: number;
   maxTtlMs: number;
 }
@@ -134,13 +140,30 @@ class LashSlashBehaviour extends BehaviourBase {
       const reachLength = 60 * 2.50 * merged.areaMultiplier;
       const a = reachLength / 2;
       const b = 22 * Math.sqrt(merged.areaMultiplier);
+      const curve = 18 * merged.areaMultiplier;
+      const tipX = ctx.playerOriginX + currentDirX * reachLength + perpX * curve;
+      const tipY = ctx.playerOriginY + currentDirY * reachLength + perpY * curve;
+      const tailX = ctx.playerOriginX - currentDirX * 8 - perpX * 3;
+      const tailY = ctx.playerOriginY - currentDirY * 8 - perpY * 3;
 
       const midX = ctx.playerOriginX + currentDirX * a + perpX * lateralOffset;
       const midY = ctx.playerOriginY + currentDirY * a + perpY * lateralOffset;
       const angle = Math.atan2(currentDirY, currentDirX);
 
       this.strikes.push({
-        midX, midY, a, b, angle, ttlMs: 150, maxTtlMs: 150
+        midX,
+        midY,
+        a,
+        b,
+        angle,
+        tipX,
+        tipY,
+        tailX,
+        tailY,
+        curlDir: i % 2 === 0 ? 1 : -1,
+        recoilPx: 10,
+        ttlMs: 180,
+        maxTtlMs: 180,
       });
 
       const queryRadius = Math.max(a, b);
@@ -163,29 +186,88 @@ class LashSlashBehaviour extends BehaviourBase {
       });
     }
 
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + dirX * 16,
+      ctx.playerOriginY + dirY * 6,
+      this.weaponId === "bloody_tear" ? "#ff6b7a" : "#dfe7ff",
+      1.05 + merged.areaMultiplier * 0.12,
+    );
     this.cadenceRemainMs = merged.cooldownMs;
   }
 
   renderWorld(ctx: CanvasRenderingContext2D): void {
     for (const strike of this.strikes) {
       const alpha = Math.max(0, strike.ttlMs / strike.maxTtlMs);
+      const whipProgress = 1 - alpha;
+      const snap = Math.sin(Math.min(1, whipProgress) * Math.PI) * 1.25;
+      const recoil = Math.max(0, strike.recoilPx * alpha);
       
       ctx.save();
+      ctx.translate(
+        -(strike.tipX - strike.tailX) * 0.012 * recoil,
+        -(strike.tipY - strike.tailY) * 0.012 * recoil,
+      );
       
-      ctx.beginPath();
-      ctx.ellipse(strike.midX, strike.midY, strike.a, strike.b, strike.angle, 0, Math.PI * 2);
+      const baseColor = this.weaponId === "bloody_tear"
+        ? { fill: `rgba(220, 20, 60, ${alpha * 0.42})`, stroke: `rgba(255, 126, 126, ${alpha})`, glow: `rgba(255, 80, 112, ${alpha * 0.28})` }
+        : { fill: `rgba(214, 229, 255, ${alpha * 0.42})`, stroke: `rgba(255, 255, 255, ${alpha})`, glow: `rgba(145, 190, 255, ${alpha * 0.24})` };
 
-      if (this.weaponId === "bloody_tear") {
-        ctx.fillStyle = `rgba(220, 20, 60, ${alpha * 0.6})`;
-        ctx.strokeStyle = `rgba(255, 100, 100, ${alpha})`;
-      } else {
-        ctx.fillStyle = `rgba(200, 220, 255, ${alpha * 0.6})`;
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-      }
-      
-      ctx.fill();
-      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      ctx.strokeStyle = baseColor.glow;
+      ctx.lineWidth = 11;
+      ctx.beginPath();
+      ctx.moveTo(strike.tailX, strike.tailY);
+      ctx.quadraticCurveTo(
+        strike.midX + strike.curlDir * 24 * snap,
+        strike.midY - 8,
+        strike.tipX,
+        strike.tipY,
+      );
       ctx.stroke();
+
+      ctx.strokeStyle = baseColor.stroke;
+      ctx.lineWidth = 4.8;
+      ctx.beginPath();
+      ctx.moveTo(strike.tailX, strike.tailY);
+      ctx.quadraticCurveTo(
+        strike.midX + strike.curlDir * 18 * snap,
+        strike.midY - 4,
+        strike.tipX,
+        strike.tipY,
+      );
+      ctx.stroke();
+
+      const segmentCount = 5;
+      for (let segment = 1; segment < segmentCount; segment += 1) {
+        const t = segment / segmentCount;
+        const oneMinus = 1 - t;
+        const knotX =
+          oneMinus * oneMinus * strike.tailX +
+          2 * oneMinus * t * (strike.midX + strike.curlDir * 10 * snap) +
+          t * t * strike.tipX;
+        const knotY =
+          oneMinus * oneMinus * strike.tailY +
+          2 * oneMinus * t * (strike.midY - 4) +
+          t * t * strike.tipY;
+        ctx.beginPath();
+        ctx.arc(knotX, knotY, Math.max(1.2, 3.4 - t * 1.8), 0, Math.PI * 2);
+        ctx.fillStyle = this.weaponId === "bloody_tear"
+          ? `rgba(255, 208, 214, ${alpha * (0.35 - t * 0.18)})`
+          : `rgba(242, 247, 255, ${alpha * (0.35 - t * 0.18)})`;
+        ctx.fill();
+      }
+
+      ctx.fillStyle = baseColor.fill;
+      ctx.beginPath();
+      ctx.arc(strike.tipX, strike.tipY, 6 + snap * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(strike.tailX, strike.tailY, 4.2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.35})`;
+      ctx.fill();
       
       ctx.restore();
     }
@@ -229,6 +311,7 @@ class MagicVolleyBehaviour extends BehaviourBase {
       const dirY = Math.sin(theta);
       spawnDirectedBolt(ctx, merged, data, dirX, dirY);
     }
+    ctx.spawnSkillBurst(ctx.playerOriginX + aimX * 12, ctx.playerOriginY + aimY * 12, "#7b8cff", 0.95);
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -244,21 +327,9 @@ class ShardStreamBehaviour extends BehaviourBase {
     const merged = mergeProfile(ctx, this.weaponId, weaponLevel);
     const data = requireWeapon(this.weaponId);
     const bursts = Math.max(1, Math.round(merged.count));
-    let aimX = ctx.aimX;
-    let aimY = ctx.aimY;
-
-    const focal = ctx.findNearestEnemy(ctx.playerOriginX, ctx.playerOriginY);
-    if (focal !== undefined) {
-      const dx = focal.x - ctx.playerOriginX;
-      const dy = focal.y - ctx.playerOriginY;
-      const len = Math.hypot(dx, dy);
-      if (len > 1e-4) {
-        aimX = dx / len;
-        aimY = dy / len;
-      }
-    }
-
-    ({ x: aimX, y: aimY } = normalizeVector(aimX, aimY));
+    const playerFacing = normalizeVector(ctx.aimX, ctx.aimY);
+    const aimX = playerFacing.x;
+    const aimY = playerFacing.y;
     const baseAngle = Math.atan2(aimY, aimX);
 
     for (let burst = 0; burst < bursts; burst += 1) {
@@ -267,6 +338,7 @@ class ShardStreamBehaviour extends BehaviourBase {
       const theta = baseAngle + jitter;
       spawnDirectedBolt(ctx, merged, data, Math.cos(theta), Math.sin(theta));
     }
+    ctx.spawnSkillBurst(ctx.playerOriginX + aimX * 10, ctx.playerOriginY + aimY * 10, "#f2f7ff", 0.9);
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -312,6 +384,7 @@ class CleaverArcBehaviour extends BehaviourBase {
         PROJECTILE_DOWNWARD_GRAVITY_PPS2,
       );
     }
+    ctx.spawnSkillBurst(ctx.playerOriginX + dirX * 8, ctx.playerOriginY + dirY * 8, "#ffbb6a", 1.0);
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -340,6 +413,7 @@ class SanctumCrossBehaviour extends BehaviourBase {
         spawnDirectedBolt(ctx, merged, data, dir.x, dir.y);
       }
     }
+    ctx.spawnSkillBurst(ctx.playerOriginX, ctx.playerOriginY, "#ffd95a", 1.1);
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -395,6 +469,8 @@ class OrbitalLiturgyBehaviour extends BehaviourBase {
       radius: orbitHitRadius,
       progress: 1 - this.activeRemainMs / activeDurationMs,
     };
+
+    ctx.spawnSkillBurst(orbX, orbY, "#ffd95a", 0.75 + merged.areaMultiplier * 0.12);
 
     ctx.forEachEnemyInDisc(
       orbX,
@@ -454,6 +530,7 @@ class FireFanBehaviour extends BehaviourBase {
       const theta = Math.random() * Math.PI * 2;
       spawnDirectedBolt(ctx, merged, data, Math.cos(theta), Math.sin(theta));
     }
+    ctx.spawnSkillBurst(ctx.playerOriginX, ctx.playerOriginY, "#ff9040", 0.95);
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -489,6 +566,13 @@ class WardingAuraBehaviour extends BehaviourBase {
           impactWorldY: enemy.y,
           damagePayload: Math.max(1, merged.damage * 0.55),
         }),
+    );
+
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX,
+      ctx.playerOriginY,
+      "#7fe0a8",
+      0.9 + merged.areaMultiplier * 0.08,
     );
 
     this.cadenceRemainMs = merged.cooldownMs;
@@ -572,6 +656,8 @@ class ConsecratedPoolBehaviour extends BehaviourBase {
           damagePayload: Math.max(1, merged.damage * 0.45),
         }),
       );
+
+      ctx.spawnSkillBurst(cx, cy, "#89a6ff", 0.95);
     }
 
     this.cadenceRemainMs = merged.cooldownMs;
@@ -630,6 +716,8 @@ class RuneTracerBehaviour extends BehaviourBase {
       Math.max(2, hitsAllowed),
     );
 
+    ctx.spawnSkillBurst(ctx.playerOriginX + dirX * 16, ctx.playerOriginY + dirY * 16, "#c892ff", 0.95);
+
     this.cadenceRemainMs = merged.cooldownMs;
   }
 }
@@ -685,6 +773,8 @@ class LightningNovaBehaviour extends BehaviourBase {
           damagePayload: merged.damage,
         }),
       );
+
+      ctx.spawnSkillBurst(prey.x, prey.y, "#7fe0ff", 1.0);
     }
 
     this.cadenceRemainMs = merged.cooldownMs;
@@ -775,10 +865,16 @@ class SigilNovaBehaviour extends BehaviourBase {
       ctx.save();
       ctx.beginPath();
       ctx.arc(shock.x, shock.y, shock.radius, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 50, 80, ${alpha * 0.5})`;
-      ctx.fill();
-      ctx.lineWidth = 15;
-      ctx.strokeStyle = `rgba(255, 200, 50, ${alpha * 0.8})`;
+    ctx.fillStyle = `rgba(255, 50, 80, ${alpha * 0.5})`;
+    ctx.fill();
+    ctx.lineWidth = 15;
+    ctx.strokeStyle = `rgba(255, 200, 50, ${alpha * 0.8})`;
+    ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(shock.x, shock.y, shock.radius * 0.28, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.7})`;
       ctx.stroke();
       ctx.restore();
     }

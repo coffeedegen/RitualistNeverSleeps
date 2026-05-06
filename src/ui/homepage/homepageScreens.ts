@@ -20,8 +20,8 @@ export function renderWalletConnectScreen(
              onerror="this.style.display='none'" />
         <div class="hp-connect-title">RITUAL SURVIVAL</div>
         <div class="hp-connect-sub">
-          Connect your blockchain wallet to enter the ritual.<br>
-          Your progress and score are stored on-chain.
+          Bind a real MetaMask wallet to awaken the ritual.<br>
+          Your progress and score are anchored on-chain.
         </div>
         <button class="hp-connect-btn" id="hp-connect-metamask">
           <span class="hp-wallet-icon">🦊</span>
@@ -35,7 +35,7 @@ export function renderWalletConnectScreen(
         <div class="hp-connect-divider"></div>
         <div class="hp-connect-footer">
           By connecting, you agree to the Terms of Service.<br>
-          Ritual Survival is a blockchain-integrated game.
+          Ritual Survival requires a real wallet connection.
         </div>
       </div>
     `;
@@ -64,9 +64,9 @@ export function renderMainMenuScreen(
                onerror="this.style.cssText='display:none'" />
           <span class="hp-logo-name">RITUAL</span>
         </div>
-        <div class="hp-wallet-badge">
+        <div class="hp-wallet-badge" aria-label="Wallet menu">
           <div class="hp-wallet-dot"></div>
-          Connected Wallet &nbsp;
+          Ritual Wallet &nbsp;
           <span style="color:#00ff50;font-family:monospace;letter-spacing:1px">${shortened}</span>
         </div>
       </nav>

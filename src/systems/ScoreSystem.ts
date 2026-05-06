@@ -25,12 +25,14 @@ const SCORE_PER_LEVEL = 500;
 export class ScoreSystem {
   private killCount = 0;
   private survivedMs = 0;
+  private readonly killBreakdown = new Map<string, number>();
 
   // ─── Live score ─────────────────────────────────────────────────────────
 
   /** Call once per killed enemy to increment score. */
-  registerKill(): void {
+  registerKill(enemyId = "unknown"): void {
     this.killCount += 1;
+    this.killBreakdown.set(enemyId, (this.killBreakdown.get(enemyId) ?? 0) + 1);
   }
 
   /** Call each game tick with the delta time while the sim is active. */
@@ -52,6 +54,12 @@ export class ScoreSystem {
 
   getSurvivedMs(): number {
     return this.survivedMs;
+  }
+
+  getKillBreakdown(): Array<{ enemyId: string; kills: number }> {
+    return [...this.killBreakdown.entries()]
+      .map(([enemyId, kills]) => ({ enemyId, kills }))
+      .sort((a, b) => b.kills - a.kills || a.enemyId.localeCompare(b.enemyId));
   }
 
   // ─── Persistence ─────────────────────────────────────────────────────────

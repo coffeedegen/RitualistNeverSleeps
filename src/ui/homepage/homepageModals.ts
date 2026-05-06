@@ -3,6 +3,11 @@ import {
   loadLeaderboard,
   type LeaderboardEntry,
 } from "../../platform/leaderboard/LeaderboardStore";
+import {
+  loadPlayerProfile,
+  normalizeXHandle,
+  savePlayerProfile,
+} from "../../platform/profile/ProfileStore";
 
 export function openSettingsModal(): HTMLDivElement {
   const backdrop = document.createElement("div");
@@ -32,6 +37,28 @@ export function openSettingsModal(): HTMLDivElement {
           </label>
           <input class="hp-slider" type="range" min="0" max="100" value="60" id="hp-slider-music" />
         </div>
+        <div class="hp-setting-row">
+          <label class="hp-setting-label" for="hp-input-xhandle">
+            <span>X Handle</span>
+            <span style="font-size:11px;color:rgba(255,255,255,0.4)">for profile card</span>
+          </label>
+          <input
+            id="hp-input-xhandle"
+            type="text"
+            placeholder="@yourhandle"
+            style="
+              width: 100%;
+              padding: 12px 14px;
+              border-radius: 12px;
+              border: 1px solid rgba(127,224,168,0.18);
+              background: rgba(4, 8, 14, 0.88);
+              color: #f7f2de;
+              font-size: 14px;
+              font-family: 'JetBrains Mono', monospace;
+              outline: none;
+            "
+          />
+        </div>
       </div>
     `;
   document.body.appendChild(backdrop);
@@ -46,6 +73,15 @@ export function openSettingsModal(): HTMLDivElement {
       if (lbl) {
         lbl.textContent = `${(e.target as HTMLInputElement).value}%`;
       }
+    });
+  }
+
+  const profile = loadPlayerProfile();
+  const xHandleInput = backdrop.querySelector("#hp-input-xhandle") as HTMLInputElement | null;
+  if (xHandleInput) {
+    xHandleInput.value = profile.xHandle ? `@${profile.xHandle}` : "";
+    xHandleInput.addEventListener("input", () => {
+      savePlayerProfile({ xHandle: normalizeXHandle(xHandleInput.value) });
     });
   }
 

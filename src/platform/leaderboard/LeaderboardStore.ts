@@ -35,8 +35,13 @@ export function loadLeaderboard(): LeaderboardEntry[] {
 }
 
 export function saveLeaderboardEntry(entry: LeaderboardEntry): number {
+  const activeWallet = WalletContext.getAddress();
+  const walletEntry = activeWallet ?? entry.wallet;
   const board = loadLeaderboard();
-  board.push(entry);
+  board.push({
+    ...entry,
+    wallet: walletEntry,
+  });
   board.sort((a, b) => b.score - a.score);
 
   const trimmed = board.slice(0, MAX_ENTRIES);
@@ -47,6 +52,10 @@ export function saveLeaderboardEntry(entry: LeaderboardEntry): number {
   }
 
   return entry.score;
+}
+
+export function getActiveWalletLabel(): string {
+  return WalletContext.getAddress() ?? "0xGuest";
 }
 
 export function seedLeaderboardEntries(): LeaderboardEntry[] {
@@ -73,3 +82,4 @@ export function seedLeaderboardEntries(): LeaderboardEntry[] {
     timestamp: now - (i + 1) * 3_600_000,
   }));
 }
+import { WalletContext } from "../../web3/WalletContext";
