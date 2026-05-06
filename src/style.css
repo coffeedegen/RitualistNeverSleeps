@@ -1,0 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;700;800&display=swap');
+
+:root {
+  color-scheme: dark;
+  --app-bg-0: #05070d;
+  --app-bg-1: #0b1020;
+  --app-glow: rgba(97, 146, 255, 0.28);
+  --app-accent: #7fe0a8;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(68, 102, 255, 0.18), transparent 34%),
+    radial-gradient(circle at 14% 80%, rgba(70, 219, 132, 0.12), transparent 30%),
+    linear-gradient(180deg, var(--app-bg-1) 0%, var(--app-bg-0) 100%);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.03), transparent 26%, transparent 74%, rgba(255, 255, 255, 0.02)),
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.04), transparent 35%);
+  mix-blend-mode: screen;
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
