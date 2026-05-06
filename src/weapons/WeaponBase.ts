@@ -39,6 +39,7 @@ export interface WeaponRuntimeContext {
   playerOriginY: number;
   aimX: number;
   aimY: number;
+  spawnSkillBurst(worldX: number, worldY: number, color: string, scale?: number): void;
   applyWeaponDamage(enemyInput: EnemyDamagePacket): void;
   spawnDirectedProjectile(payload: ProjectileSpawnPayload): boolean;
   forEachEnemyIntersectingRect(

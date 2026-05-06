@@ -1,4 +1,9 @@
 import { Web3Manager, type Web3WalletData } from "./Web3Manager";
+import {
+  loadPlayerProfile,
+  normalizeXHandle,
+  savePlayerProfile,
+} from "../platform/profile/ProfileStore";
 
 export interface WalletConnectUIConfig {
   onConnect: (walletData: Web3WalletData) => void;
@@ -14,12 +19,7 @@ export class WalletConnectUI {
 
   constructor(config: WalletConnectUIConfig) {
     this.config = config;
-    this.web3Manager = Web3Manager.getInstance({
-      onConnected: (walletData) => {
-        this.config.onConnect(walletData);
-        this.hide();
-      },
-    });
+    this.web3Manager = Web3Manager.getInstance();
   }
 
   render(): HTMLDivElement {
@@ -31,6 +31,7 @@ export class WalletConnectUI {
     this.container.id = this.config.containerId || "wallet-connect-modal";
     this.container.innerHTML = this.getModalHTML();
     this.attachEventListeners();
+    this.prefillProfileFields();
 
     return this.container;
   }
@@ -41,7 +42,20 @@ export class WalletConnectUI {
         <div style="${this.getModalStyle()}">
           <div style="${this.getHeaderStyle()}">
             <h1 style="${this.getTitleStyle()}">Connect Wallet</h1>
-            <p style="${this.getSubtitleStyle()}">Connect your MetaMask wallet to play</p>
+            <p style="${this.getSubtitleStyle()}">A real MetaMask wallet is required to enter the game</p>
+          </div>
+
+          <div style="${this.getFieldStyle()}">
+            <label for="x-handle-input" style="${this.getLabelStyle()}">X handle for your card</label>
+            <input
+              id="x-handle-input"
+              type="text"
+              placeholder="@yourhandle"
+              autocomplete="off"
+              spellcheck="false"
+              style="${this.getInputStyle()}"
+            />
+            <div style="${this.getHintStyle()}">Used for your mint card and X share preview.</div>
           </div>
 
           <div id="wallet-error" style="${this.getErrorStyle()} display: none;">
@@ -62,10 +76,10 @@ export class WalletConnectUI {
 
           <div style="${this.getFooterStyle()}">
             <p style="${this.getFooterTextStyle()}">
-              Don't have MetaMask?
+              Need MetaMask to continue.
               <a href="https://metamask.io" target="_blank" rel="noopener noreferrer" 
                  style="${this.getLinkStyle()}">
-                Install it here
+                Install the extension here
               </a>
             </p>
           </div>
@@ -90,6 +104,16 @@ export class WalletConnectUI {
     }
   }
 
+  private prefillProfileFields(): void {
+    const profile = loadPlayerProfile();
+    const xHandleInput = this.container?.querySelector(
+      "#x-handle-input",
+    ) as HTMLInputElement | null;
+    if (xHandleInput) {
+      xHandleInput.value = profile.xHandle ? `@${profile.xHandle}` : "";
+    }
+  }
+
   private async handleConnect(): Promise<void> {
     if (this.isConnecting) return;
 
@@ -106,6 +130,9 @@ export class WalletConnectUI {
     const errorText = this.container?.querySelector(
       "#error-text"
     ) as HTMLSpanElement;
+    const xHandleInput = this.container?.querySelector(
+      "#x-handle-input",
+    ) as HTMLInputElement | null;
 
     try {
       if (connectBtn) connectBtn.disabled = true;
@@ -113,7 +140,13 @@ export class WalletConnectUI {
       if (errorDiv) errorDiv.style.display = "none";
 
       const walletData = await this.web3Manager.connectMetaMask();
-      this.config.onConnect(walletData);
+      const xHandle = normalizeXHandle(xHandleInput?.value ?? null);
+      const enrichedWallet: Web3WalletData = {
+        ...walletData,
+        xHandle,
+      };
+      savePlayerProfile({ xHandle });
+      this.config.onConnect(enrichedWallet);
       this.hide();
     } catch (error: any) {
       const errorMessage = error.message || "Failed to connect wallet";
@@ -187,6 +220,49 @@ export class WalletConnectUI {
     return `
       text-align: center;
       margin-bottom: 30px;
+    `;
+  }
+
+  private getFieldStyle(): string {
+    return `
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 22px;
+      text-align: left;
+    `;
+  }
+
+  private getLabelStyle(): string {
+    return `
+      color: #dce8ff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+    `;
+  }
+
+  private getInputStyle(): string {
+    return `
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(127, 224, 168, 0.18);
+      background: rgba(4, 8, 14, 0.88);
+      color: #f7f2de;
+      padding: 14px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+    `;
+  }
+
+  private getHintStyle(): string {
+    return `
+      color: rgba(160, 174, 192, 0.75);
+      font-size: 11px;
+      line-height: 1.4;
     `;
   }
 

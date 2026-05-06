@@ -1,4 +1,10 @@
-import { formatRunDuration } from "../utils/time";
+import {
+  buildRunCardExportName,
+  buildXShareText,
+  measureRunCard,
+  renderRunCard,
+  type RunCardSummary,
+} from "./RunCardRenderer";
 
 interface ButtonRect {
   x: number;
@@ -11,6 +17,7 @@ export interface GameOverUICallbacks {
   onStartNewGame: () => void;
   onBackToMainMenu: () => void;
   onQuitConfirmed: () => void;
+  onMintCard: (summary: RunCardSummary) => void;
 }
 
 type OverlayMode = "hidden" | "gameOver" | "confirmQuit";
@@ -18,20 +25,17 @@ type OverlayMode = "hidden" | "gameOver" | "confirmQuit";
 /**
  * Canvas overlay shown after the survivor dies.
  *
- * The overlay owns the game-over button state and keeps the quit confirmation
- * entirely inside the canvas layer so the game can be restarted or returned to
- * the homepage without reusing stale runtime state.
+ * The overlay now centers on a mint-ready run card with share/export actions,
+ * while keeping the restart / menu controls available in the same layer.
  */
 export class GameOverUI {
   private overlayMode: OverlayMode = "hidden";
 
   private actionLocked = false;
 
-  private finalScore = 0;
-
-  private finalKills = 0;
-
-  private finalSurvivedMs = 0;
+  private shareBusy = false;
+  private pressedButton: string | null = null;
+  private pressedUntilMs = 0;
 
   private readonly clickListener = (event: MouseEvent): void => {
     if (this.overlayMode === "hidden" || this.actionLocked) {
@@ -44,9 +48,32 @@ export class GameOverUI {
     const mouseY = event.clientY;
 
     if (this.overlayMode === "gameOver") {
+      const cardButtons = this.getCardActions(width, height);
+      if (this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.mint)) {
+        event.preventDefault();
+        this.markPressed("card-mint");
+        this.callbacks.onMintCard(this.summary);
+        return;
+      }
+
+      if (this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.share)) {
+        event.preventDefault();
+        this.markPressed("card-share");
+        void this.shareRunCard();
+        return;
+      }
+
+      if (this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.download)) {
+        event.preventDefault();
+        this.markPressed("card-download");
+        void this.downloadRunCard();
+        return;
+      }
+
       const buttons = this.getMainButtons(width, height);
       if (this.hitTest(mouseX, mouseY, buttons.start)) {
         event.preventDefault();
+        this.markPressed("main-start");
         this.actionLocked = true;
         this.callbacks.onStartNewGame();
         return;
@@ -54,6 +81,7 @@ export class GameOverUI {
 
       if (this.hitTest(mouseX, mouseY, buttons.menu)) {
         event.preventDefault();
+        this.markPressed("main-menu");
         this.actionLocked = true;
         this.callbacks.onBackToMainMenu();
         return;
@@ -61,6 +89,7 @@ export class GameOverUI {
 
       if (this.hitTest(mouseX, mouseY, buttons.quit)) {
         event.preventDefault();
+        this.markPressed("main-quit");
         this.overlayMode = "confirmQuit";
       }
       return;
@@ -69,6 +98,7 @@ export class GameOverUI {
     const buttons = this.getQuitButtons(width, height);
     if (this.hitTest(mouseX, mouseY, buttons.yes)) {
       event.preventDefault();
+      this.markPressed("quit-yes");
       this.actionLocked = true;
       this.callbacks.onQuitConfirmed();
       return;
@@ -76,9 +106,16 @@ export class GameOverUI {
 
     if (this.hitTest(mouseX, mouseY, buttons.no)) {
       event.preventDefault();
+      this.markPressed("quit-no");
       this.overlayMode = "gameOver";
     }
   };
+
+  private summary: RunCardSummary | null = null;
+
+  private avatarImage: HTMLImageElement | null = null;
+
+  private avatarLoadSerial = 0;
 
   constructor(private readonly callbacks: GameOverUICallbacks) {
     window.addEventListener("mousedown", this.clickListener, true);
@@ -88,14 +125,21 @@ export class GameOverUI {
     window.removeEventListener("mousedown", this.clickListener, true);
     this.overlayMode = "hidden";
     this.actionLocked = false;
+    this.shareBusy = false;
+    this.summary = null;
+    this.avatarImage = null;
+    this.pressedButton = null;
+    this.pressedUntilMs = 0;
   }
 
-  present(finalScore: number, kills: number, survivedMs: number): void {
-    this.finalScore = finalScore;
-    this.finalKills = kills;
-    this.finalSurvivedMs = survivedMs;
+  present(summary: RunCardSummary): void {
+    this.summary = summary;
     this.overlayMode = "gameOver";
     this.actionLocked = false;
+    this.shareBusy = false;
+    this.pressedButton = null;
+    this.pressedUntilMs = 0;
+    this.loadAvatar(summary);
   }
 
   isBannerOpen(): boolean {
@@ -116,96 +160,72 @@ export class GameOverUI {
       height * 0.45,
       Math.max(width, height) * 0.95,
     );
-    backdrop.addColorStop(0, "rgba(42, 18, 24, 0.92)");
+    backdrop.addColorStop(0, "rgba(34, 18, 28, 0.92)");
     backdrop.addColorStop(0.45, "rgba(8, 11, 22, 0.94)");
     backdrop.addColorStop(1, "rgba(2, 3, 7, 0.98)");
     ctx.fillStyle = backdrop;
     ctx.fillRect(0, 0, width, height);
 
     this.drawBackdrop(ctx, width, height);
-
     this.drawTitle(ctx, width, height);
 
     if (this.overlayMode === "confirmQuit") {
       this.drawQuitConfirmation(ctx, width, height);
     } else {
-      this.drawGameOverSummary(ctx, width, height);
+      if (this.summary !== null) {
+        const frame = measureRunCard(width, height);
+        renderRunCard(ctx, this.summary, width, height, this.avatarImage, { mode: "screen" });
+        this.drawCardActions(ctx, frame, width, height);
+      }
       this.drawMainButtons(ctx, width, height);
     }
 
     ctx.restore();
   }
 
-  private drawTitle(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-  ): void {
+  private drawTitle(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     const compact = this.isCompactLayout(width, height);
     ctx.fillStyle = "#ff6b7a";
-    ctx.font = `900 ${compact ? 48 : 72}px 'Cinzel', 'Times New Roman', serif`;
+    ctx.font = `900 ${compact ? 46 : 68}px 'Cinzel', 'Times New Roman', serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("GAME OVER", width * 0.5, height * (compact ? 0.17 : 0.24));
+    ctx.fillText("THE RITUAL ARCHIVE", width * 0.5, height * (compact ? 0.17 : 0.16));
 
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.font = `600 ${compact ? 11 : 13}px 'JetBrains Mono', monospace`;
-    ctx.fillText("THE RITUAL HAS ENDED", width * 0.5, height * (compact ? 0.23 : 0.29));
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = `600 ${compact ? 10 : 12}px 'JetBrains Mono', monospace`;
+    ctx.fillText("MINT-READY RUN CARD", width * 0.5, height * (compact ? 0.23 : 0.21));
   }
 
-  private drawGameOverSummary(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-  ): void {
-    const compact = this.isCompactLayout(width, height);
-    const cardW = Math.min(width * 0.82, compact ? 360 : 420);
-    const cardH = compact ? 112 : 128;
-    const cardX = width * 0.5 - cardW / 2;
-    const cardY = height * (compact ? 0.30 : 0.34);
-
-    const fillGradient = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
-    fillGradient.addColorStop(0, "rgba(16, 22, 42, 0.98)");
-    fillGradient.addColorStop(1, "rgba(6, 8, 14, 0.96)");
-    ctx.fillStyle = fillGradient;
-    this.roundPane(ctx, cardX, cardY, cardW, cardH, 12);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(127, 224, 168, 0.24)";
-    ctx.lineWidth = 1.5;
-    this.roundPane(ctx, cardX, cardY, cardW, cardH, 12);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(127, 224, 168, 0.14)";
-    this.roundPane(ctx, cardX + 10, cardY + 10, cardW - 20, cardH - 20, 10);
-    ctx.fill();
-
-    ctx.fillStyle = "#7fe0a8";
-    ctx.font = `900 ${compact ? 30 : 40}px 'Space Grotesk', 'Segoe UI', sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(this.finalScore.toLocaleString(), width * 0.5, cardY + 42);
-
-    ctx.fillStyle = "rgba(255,255,255,0.48)";
-    ctx.font = "700 10px 'JetBrains Mono', monospace";
-    ctx.fillText("FINAL SCORE", width * 0.5, cardY + 68);
-
-    const statsY = cardY + 92;
-    this.drawStatChip(ctx, width * 0.5 - 104, statsY, "KILLS", `${this.finalKills}`);
-    this.drawStatChip(ctx, width * 0.5 + 12, statsY, "TIME", formatRunDuration(this.finalSurvivedMs));
-  }
-
-  private drawMainButtons(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-  ): void {
+  private drawMainButtons(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     const compact = this.isCompactLayout(width, height);
     const layout = this.getMainButtons(width, height);
-    const accentFont = compact ? 15 : 18;
+    const accentFont = compact ? 14 : 16;
 
-    this.drawButton(ctx, layout.start, "Start a New Game", "#5f92ff", accentFont, true);
-    this.drawButton(ctx, layout.menu, "Back to Main Menu", "#41d37c", accentFont);
-    this.drawButton(ctx, layout.quit, "Quit", "#ff6b7a", accentFont);
+    this.drawButton(ctx, layout.start, "Start a New Game", "#41d37c", accentFont, true, this.isPressed("main-start"));
+    this.drawButton(ctx, layout.menu, "Back to Main Menu", "#41d37c", accentFont, false, this.isPressed("main-menu"));
+    this.drawButton(ctx, layout.quit, "Quit", "#41d37c", accentFont, false, this.isPressed("main-quit"));
+  }
+
+  private drawCardActions(
+    ctx: CanvasRenderingContext2D,
+    frame: { x: number; y: number; w: number; h: number },
+    width: number,
+    height: number,
+  ): void {
+    const compact = this.isCompactLayout(width, height);
+    const buttonH = compact ? 34 : 38;
+    const buttonW = compact ? Math.min(230, frame.w * 0.34) : 200;
+    const gap = compact ? 12 : 16;
+    const rowY = frame.y - (compact ? 50 : 56);
+    const totalW = buttonW * 3 + gap * 2;
+    const startX = width * 0.5 - totalW / 2;
+    const mint = { x: startX, y: rowY, w: buttonW, h: buttonH };
+    const share = { x: mint.x + buttonW + gap, y: rowY, w: buttonW, h: buttonH };
+    const download = { x: share.x + buttonW + gap, y: rowY, w: buttonW, h: buttonH };
+
+    this.drawButton(ctx, mint, "Mint this Card", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-mint"));
+    this.drawButton(ctx, share, "Share to X", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-share"));
+    this.drawButton(ctx, download, "Download Card", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-download"));
   }
 
   private drawQuitConfirmation(
@@ -217,7 +237,7 @@ export class GameOverUI {
     const questionY = height * (compact ? 0.40 : 0.42);
 
     const panelW = Math.min(width * 0.86, 620);
-    const panelH = compact ? 96 : 104;
+    const panelH = compact ? 100 : 108;
     const panelX = width * 0.5 - panelW / 2;
     const panelY = questionY - panelH / 2;
 
@@ -234,10 +254,10 @@ export class GameOverUI {
     ctx.stroke();
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = `700 ${compact ? 18 : 22}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+    ctx.font = `700 ${compact ? 17 : 20}px 'Space Grotesk', 'Segoe UI', sans-serif`;
     wrapAndFillText(
       ctx,
-      "Are you sure you will quit the game?",
+      "Are you sure you want to quit the game?",
       width * 0.5,
       panelY + panelH / 2,
       panelW - 36,
@@ -245,9 +265,9 @@ export class GameOverUI {
     );
 
     const buttons = this.getQuitButtons(width, height);
-    const accentFont = compact ? 15 : 17;
-    this.drawButton(ctx, buttons.yes, "Yes", "#ff6b7a", accentFont);
-    this.drawButton(ctx, buttons.no, "No", "#5f92ff", accentFont);
+    const accentFont = compact ? 14 : 16;
+    this.drawButton(ctx, buttons.yes, "Yes", "#41d37c", accentFont, false, this.isPressed("quit-yes"));
+    this.drawButton(ctx, buttons.no, "No", "#41d37c", accentFont, false, this.isPressed("quit-no"));
   }
 
   private drawButton(
@@ -257,28 +277,34 @@ export class GameOverUI {
     accent: string,
     fontSize: number,
     highlight = false,
+    pressed = false,
   ): void {
+    const pressOffset = pressed ? 2 : 0;
+    const drawX = rect.x;
+    const drawY = rect.y + pressOffset;
+    const drawH = Math.max(10, rect.h - pressOffset);
+
     const fillGradient = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    fillGradient.addColorStop(0, "rgba(22, 28, 46, 0.98)");
-    fillGradient.addColorStop(1, "rgba(7, 9, 15, 0.98)");
+    fillGradient.addColorStop(0, pressed ? "rgba(18, 26, 20, 0.98)" : "rgba(22, 28, 46, 0.98)");
+    fillGradient.addColorStop(1, pressed ? "rgba(5, 14, 9, 0.98)" : "rgba(7, 9, 15, 0.98)");
     ctx.fillStyle = fillGradient;
-    this.roundPane(ctx, rect.x, rect.y, rect.w, rect.h, 8);
+    this.roundPane(ctx, drawX, drawY, rect.w, drawH, 8);
     ctx.fill();
 
     ctx.strokeStyle = accent;
-    ctx.lineWidth = highlight ? 4 : 3;
-    this.roundPane(ctx, rect.x, rect.y, rect.w, rect.h, 8);
+    ctx.lineWidth = pressed ? 2 : (highlight ? 4 : 3);
+    this.roundPane(ctx, drawX, drawY, rect.w, drawH, 8);
     ctx.stroke();
 
-    ctx.fillStyle = this.withAlpha(accent, 0.14);
-    this.roundPane(ctx, rect.x + 4, rect.y + 4, rect.w - 8, rect.h - 8, 6);
+    ctx.fillStyle = this.withAlpha(accent, pressed ? 0.26 : 0.14);
+    this.roundPane(ctx, drawX + 4, drawY + 4, rect.w - 8, drawH - 8, 6);
     ctx.fill();
 
     ctx.fillStyle = "#ffffff";
     ctx.font = `700 ${fontSize}px 'Space Grotesk', ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+    ctx.fillText(text, drawX + rect.w / 2, drawY + drawH / 2 + (pressed ? 0.5 : 0));
   }
 
   private getMainButtons(width: number, height: number): {
@@ -287,37 +313,51 @@ export class GameOverUI {
     quit: ButtonRect;
   } {
     if (this.isCompactLayout(width, height)) {
-      const buttonW = Math.min(340, Math.max(240, width * 0.84));
-      const buttonH = height < 420 ? 42 : 46;
-      const gap = height < 420 ? 8 : 10;
-      const totalH = buttonH * 3 + gap * 2;
-      const startY = Math.min(
-        Math.max(height * 0.57, 24),
-        height - totalH - 20,
-      );
-      const x = width * 0.5 - buttonW / 2;
-
+      const buttonW = Math.min(284, Math.max(180, (width - 38) / 2));
+      const buttonH = height < 420 ? 36 : 38;
+      const gapX = 12;
+      const gapY = 10;
+      const totalW = buttonW * 2 + gapX;
+      const x = width * 0.5 - totalW / 2;
+      const topY = Math.min(Math.max(height * 0.925, 24), height - buttonH * 2 - gapY - 10);
       return {
-        start: { x, y: startY, w: buttonW, h: buttonH },
-        menu: { x, y: startY + buttonH + gap, w: buttonW, h: buttonH },
-        quit: { x, y: startY + (buttonH + gap) * 2, w: buttonW, h: buttonH },
+        start: { x, y: topY, w: buttonW, h: buttonH },
+        menu: { x: x + buttonW + gapX, y: topY, w: buttonW, h: buttonH },
+        quit: { x, y: topY + buttonH + gapY, w: totalW, h: buttonH },
       };
     }
 
-    const buttonW = Math.min(240, Math.max(210, width * 0.22));
+    const buttonW = Math.min(236, Math.max(206, width * 0.22));
     const buttonH = 60;
     const gap = Math.max(20, Math.min(30, width * 0.03));
     const totalW = buttonW * 3 + gap * 2;
     const x = width * 0.5 - totalW / 2;
-    const y = Math.min(
-      Math.max(height * 0.63, 24),
-      height - buttonH - 44,
-    );
+    const y = Math.min(Math.max(height * 0.88, 24), height - buttonH - 14);
 
     return {
       start: { x, y, w: buttonW, h: buttonH },
       menu: { x: x + buttonW + gap, y, w: buttonW, h: buttonH },
       quit: { x: x + (buttonW + gap) * 2, y, w: buttonW, h: buttonH },
+    };
+  }
+
+  private getCardActions(width: number, height: number): {
+    mint: ButtonRect;
+    share: ButtonRect;
+    download: ButtonRect;
+  } {
+    const compact = this.isCompactLayout(width, height);
+    const frame = measureRunCard(width, height);
+    const buttonH = compact ? 34 : 38;
+    const buttonW = compact ? Math.min(230, frame.w * 0.34) : 200;
+    const gap = compact ? 12 : 16;
+    const rowY = frame.y - (compact ? 50 : 56);
+    const totalW = buttonW * 3 + gap * 2;
+    const startX = width * 0.5 - totalW / 2;
+    return {
+      mint: { x: startX, y: rowY, w: buttonW, h: buttonH },
+      share: { x: startX + buttonW + gap, y: rowY, w: buttonW, h: buttonH },
+      download: { x: startX + (buttonW + gap) * 2, y: rowY, w: buttonW, h: buttonH },
     };
   }
 
@@ -344,10 +384,7 @@ export class GameOverUI {
     const gap = 16;
     const totalW = buttonW * 2 + gap;
     const x = width * 0.5 - totalW / 2;
-    const y = Math.min(
-      Math.max(height * 0.60, 24),
-      height - buttonH - 42,
-    );
+    const y = Math.min(Math.max(height * 0.60, 24), height - buttonH - 42);
 
     return {
       yes: { x, y, w: buttonW, h: buttonH },
@@ -359,11 +396,16 @@ export class GameOverUI {
     return width < 860 || height < 680;
   }
 
-  private drawBackdrop(
-    ctx: CanvasRenderingContext2D,
-    width: number,
-    height: number,
-  ): void {
+  private markPressed(buttonId: string): void {
+    this.pressedButton = buttonId;
+    this.pressedUntilMs = performance.now() + 120;
+  }
+
+  private isPressed(buttonId: string): boolean {
+    return this.pressedButton === buttonId && performance.now() <= this.pressedUntilMs;
+  }
+
+  private drawBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     ctx.strokeStyle = "rgba(127, 224, 168, 0.08)";
@@ -385,35 +427,132 @@ export class GameOverUI {
     ctx.restore();
   }
 
-  private drawStatChip(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    label: string,
-    value: string,
-  ): void {
-    const chipW = 92;
-    const chipH = 36;
-    const chipX = x - chipW / 2;
-    const chipY = y - chipH / 2;
+  private async shareRunCard(): Promise<void> {
+    if (this.summary === null || this.shareBusy) {
+      return;
+    }
 
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    this.roundPane(ctx, chipX, chipY, chipW, chipH, 10);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(127,224,168,0.22)";
-    ctx.lineWidth = 1;
-    this.roundPane(ctx, chipX, chipY, chipW, chipH, 10);
-    ctx.stroke();
+    this.shareBusy = true;
+    try {
+      const { blob, file } = await this.buildExportFile();
+      const text = buildXShareText(this.summary.score);
+      const url = URL.createObjectURL(blob);
+      const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+      const shareWindow = window.open(url, "_blank", "noopener,noreferrer");
+      if (shareWindow) {
+        setTimeout(() => {
+          window.open(shareUrl, "_blank", "noopener,noreferrer");
+        }, 150);
+        return;
+      }
 
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
-    ctx.font = "700 8px 'JetBrains Mono', monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.fillText(label, x, chipY + 5);
+      if (navigator.share && file !== null) {
+        const canShareFiles = typeof navigator.canShare === "function"
+          ? navigator.canShare({ files: [file] })
+          : true;
+        if (canShareFiles) {
+          await navigator.share({
+            text,
+            title: "Ritualist Never Sleeps",
+            files: [file],
+          });
+          return;
+        }
+      }
 
-    ctx.fillStyle = "#f7f2de";
-    ctx.font = "700 13px 'Space Grotesk', sans-serif";
-    ctx.fillText(value, x, chipY + 16);
+      await navigator.clipboard.writeText(text);
+      window.open(shareUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      console.error("Failed to share run card:", error);
+      void this.downloadRunCard();
+    } finally {
+      this.shareBusy = false;
+    }
+  }
+
+  private async downloadRunCard(): Promise<void> {
+    if (this.summary === null) {
+      return;
+    }
+
+    const { blob } = await this.buildExportFile();
+    await this.downloadBlob(blob, buildRunCardExportName(this.summary.displayName, this.summary.score));
+  }
+
+  private async buildExportFile(): Promise<{ blob: Blob; file: File | null }> {
+    if (this.summary === null) {
+      throw new Error("Run summary is unavailable.");
+    }
+
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = 1600;
+    exportCanvas.height = 2000;
+    const exportCtx = exportCanvas.getContext("2d");
+    if (!exportCtx) {
+      throw new Error("Canvas export context unavailable.");
+    }
+
+    renderRunCard(
+      exportCtx,
+      this.summary,
+      exportCanvas.width,
+      exportCanvas.height,
+      this.avatarImage,
+      { mode: "export" },
+    );
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      exportCanvas.toBlob((value) => {
+        if (value) {
+          resolve(value);
+        } else {
+          reject(new Error("Failed to export run card."));
+        }
+      }, "image/png");
+    });
+
+    const file = typeof File !== "undefined"
+      ? new File(
+          [blob],
+          buildRunCardExportName(this.summary.displayName, this.summary.score),
+          { type: "image/png" },
+        )
+      : null;
+
+    return { blob, file };
+  }
+
+  private async downloadBlob(blob: Blob, filename: string): Promise<void> {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private loadAvatar(summary: RunCardSummary): void {
+    const handle = summary.xHandle?.trim();
+    if (!handle) {
+      this.avatarImage = null;
+      return;
+    }
+
+    const src = `https://unavatar.io/x/${encodeURIComponent(handle)}`;
+    const img = new Image();
+    const serial = ++this.avatarLoadSerial;
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (serial === this.avatarLoadSerial) {
+        this.avatarImage = img;
+      }
+    };
+    img.onerror = () => {
+      if (serial === this.avatarLoadSerial) {
+        this.avatarImage = null;
+      }
+    };
+    img.src = src;
   }
 
   private withAlpha(hex: string, alpha: number): string {

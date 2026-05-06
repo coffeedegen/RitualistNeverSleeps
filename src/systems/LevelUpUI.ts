@@ -22,7 +22,7 @@ interface LevelCardLayout {
 /**
  * Lightweight pause overlay presenting {@link SurvivorLevelCardOffer} bundles.
  *
- * Activated entirely from canvas redraw + keyboard shortcuts (digits `1–4`).
+ * Activated entirely from canvas redraw + keyboard shortcuts (digits `1–3`).
  */
 export class LevelUpUI {
   private overlayActive = false;
@@ -49,11 +49,6 @@ export class LevelUpUI {
       case "Numpad3":
         event.preventDefault();
         this.resolveSelectionAt(2);
-        break;
-      case "Digit4":
-      case "Numpad4":
-        event.preventDefault();
-        this.resolveSelectionAt(3);
         break;
       default:
         break;
@@ -138,24 +133,29 @@ export class LevelUpUI {
       height * 0.3,
       Math.max(width, height) * 0.9,
     );
-    backgroundGradient.addColorStop(0, "rgba(28, 36, 58, 0.88)");
-    backgroundGradient.addColorStop(0.48, "rgba(9, 12, 24, 0.9)");
-    backgroundGradient.addColorStop(1, "rgba(3, 5, 10, 0.96)");
+    backgroundGradient.addColorStop(0, "rgba(44, 14, 22, 0.92)");
+    backgroundGradient.addColorStop(0.42, "rgba(16, 8, 18, 0.94)");
+    backgroundGradient.addColorStop(1, "rgba(3, 4, 8, 0.98)");
 
     ctx.fillStyle = backgroundGradient;
     ctx.fillRect(0, 0, width, height);
 
     this.drawBackdropRings(ctx, width, height);
+    this.drawBackdropSigils(ctx, width, height);
 
     ctx.fillStyle = "#fdf7ff";
-    ctx.font = "900 36px 'Cinzel', 'Times New Roman', serif";
+    ctx.font = "900 35px 'Cinzel', 'Times New Roman', serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     ctx.fillText("LEVEL UP", width * 0.5, height * 0.15);
 
-    ctx.font = "600 14px 'Inter', system-ui, sans-serif";
-    ctx.fillStyle = "rgba(205, 214, 255, 0.8)";
+    ctx.font = "600 12px 'Inter', system-ui, sans-serif";
+    ctx.fillStyle = "rgba(239, 225, 232, 0.82)";
     ctx.fillText("Choose one blessing to continue the ritual.", width * 0.5, height * 0.2);
+
+    ctx.font = "700 10px 'JetBrains Mono', monospace";
+    ctx.fillStyle = "rgba(255, 185, 205, 0.78)";
+    ctx.fillText("PRESS 1 - 3 OR CLICK A CARD", width * 0.5, height * 0.235);
 
     const layout = this.getLayout(width, height);
 
@@ -183,89 +183,101 @@ export class LevelUpUI {
     index: number,
   ): void {
     const { x, y, w, h } = rect;
-    const accentGlow = this.mixAccent(entry.accent, 0.34);
-    const accentFaint = this.mixAccent(entry.accent, 0.12);
+    const accentGlow = this.mixAccent(entry.accent, 0.42);
+    const accentFaint = this.mixAccent(entry.accent, 0.14);
 
+    const isCenterCard = index === 1 && this.draftedCards.length === 3;
+    const inset = isCenterCard ? 1 : 0;
+    const radius = isCenterCard ? 12 : 10;
     const fillGradient = ctx.createLinearGradient(x, y, x, y + h);
-    fillGradient.addColorStop(0, "rgba(11, 16, 33, 0.96)");
-    fillGradient.addColorStop(1, "rgba(6, 8, 14, 0.98)");
+    fillGradient.addColorStop(0, isCenterCard ? "rgba(33, 14, 22, 0.99)" : "rgba(16, 11, 21, 0.97)");
+    fillGradient.addColorStop(1, "rgba(6, 6, 10, 0.99)");
 
     ctx.fillStyle = fillGradient;
-    this.roundPane(ctx, x, y, w, h, 18);
+    this.roundPane(ctx, x + inset, y + inset, w - inset * 2, h - inset * 2, radius);
     ctx.fill();
 
     ctx.strokeStyle = accentGlow;
-    ctx.lineWidth = 2.5;
-    this.roundPane(ctx, x, y, w, h, 18);
+    ctx.lineWidth = isCenterCard ? 3.75 : 2.2;
+    this.roundPane(ctx, x + inset, y + inset, w - inset * 2, h - inset * 2, radius);
     ctx.stroke();
 
     ctx.strokeStyle = accentFaint;
     ctx.lineWidth = 1;
-    this.roundPane(ctx, x + 4, y + 4, w - 8, h - 8, 14);
+    this.roundPane(ctx, x + 5, y + 5, w - 10, h - 10, isCenterCard ? 10 : 8);
     ctx.stroke();
 
-    ctx.fillStyle = accentFaint;
-    this.roundPane(ctx, x, y, w, 8, 18);
+    const topBand = ctx.createLinearGradient(x, y, x + w, y);
+    topBand.addColorStop(0, this.withAlpha(entry.accent, 0.84));
+    topBand.addColorStop(0.5, isCenterCard ? "rgba(255, 231, 149, 0.68)" : "rgba(255,255,255,0.22)");
+    topBand.addColorStop(1, this.withAlpha(entry.accent, 0.84));
+    ctx.fillStyle = topBand;
+    this.roundPane(ctx, x + inset, y + inset, w - inset * 2, 6, radius);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+    this.roundPane(ctx, x + 14, y + 18, w - 28, h - 30, radius - 6);
     ctx.fill();
 
     ctx.save();
-    ctx.fillStyle = this.withAlpha(entry.accent, 0.14);
+    ctx.fillStyle = this.withAlpha(entry.accent, 0.18);
     ctx.beginPath();
-    ctx.arc(x + w - 34, y + 34, 18, 0, Math.PI * 2);
+    ctx.arc(x + w - 38, y + 38, isCenterCard ? 22 : 18, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
     ctx.fillStyle = this.withAlpha(entry.accent, 0.9);
-    ctx.font = "800 16px 'Space Grotesk', 'Segoe UI', sans-serif";
+    ctx.font = isCenterCard ? "800 17px 'Space Grotesk', 'Segoe UI', sans-serif" : "800 16px 'Space Grotesk', 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`${index + 1}`, x + w - 28, y + 34);
+    ctx.fillText(`${index + 1}`, x + w - 38, y + 36);
 
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillStyle = "rgba(255,255,255,0.62)";
     ctx.font = "700 9px 'JetBrains Mono', monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("SKILL", x + 18, y + 28);
+    ctx.fillText("RITE", x + 30, y + 24);
 
     ctx.fillStyle = "#f9fbff";
-    ctx.font = "700 19px 'Space Grotesk', 'Segoe UI', sans-serif";
-    drawTextBlock(ctx, entry.title, x + w * 0.5, y + 52, w - 62, 22, 2, "center");
+    ctx.font = isCenterCard ? "700 19px 'Space Grotesk', 'Segoe UI', sans-serif" : "700 18px 'Space Grotesk', 'Segoe UI', sans-serif";
+    drawTextBlock(ctx, entry.title, x + w * 0.5, y + 46, w - 72, 20, 2, "center");
 
-    const effectLabelY = y + 96;
+    const effectLabelY = y + 88;
     ctx.fillStyle = this.withAlpha(entry.accent, 0.9);
-    ctx.font = "700 10px 'JetBrains Mono', monospace";
-    ctx.fillText("EFFECT", x + 18, effectLabelY);
+    ctx.font = "700 11px 'JetBrains Mono', monospace";
+    ctx.fillText("EFFECT", x + 32, effectLabelY);
 
     ctx.fillStyle = "rgba(245, 247, 255, 0.95)";
-    const effectBottom = drawTextBlock(
+    drawTextBlock(
       ctx,
       entry.effect,
-      x + 18,
-      effectLabelY + 18,
-      w - 36,
-      16,
-      3,
+      x + 32,
+      effectLabelY + 13,
+      w - 64,
+      13,
+      2,
       "left",
     );
-
-    if (entry.details !== undefined && entry.details.trim().length > 0) {
-      const detailsLabelY = Math.max(effectBottom + 10, y + h - 52);
-      ctx.fillStyle = "rgba(205,214,255,0.8)";
-      ctx.font = "700 10px 'JetBrains Mono', monospace";
-      ctx.fillText("DETAILS", x + 18, detailsLabelY);
-
-      ctx.fillStyle = "rgba(205,214,255,0.92)";
+    if (entry.details !== undefined && entry.details.length > 0) {
+      ctx.fillStyle = "rgba(240, 233, 240, 0.8)";
+      ctx.font = "600 10px 'Inter', system-ui, sans-serif";
+      ctx.fillText("DETAILS", x + 32, y + 148);
+      ctx.fillStyle = "rgba(229, 219, 224, 0.94)";
       drawTextBlock(
         ctx,
         entry.details,
-        x + 18,
-        detailsLabelY + 16,
-        w - 36,
-        14,
+        x + 32,
+        y + 160,
+        w - 64,
+        12,
         2,
         "left",
       );
     }
+
+    ctx.fillStyle = "rgba(224, 208, 217, 0.76)";
+    ctx.font = "700 9px 'JetBrains Mono', monospace";
+    ctx.fillText(isCenterCard ? "CROWN OPTION" : "CHOOSE WISELY", x + 32, y + h - 12);
   }
 
   private resolveSelectionAt(index: number): void {
@@ -303,22 +315,23 @@ export class LevelUpUI {
   }
 
   private getLayout(width: number, height: number): LevelCardLayout {
-    const columns = 2;
-    const gapX = Math.max(20, Math.floor(width * 0.022));
-    const gapY = Math.max(14, Math.floor(height * 0.026));
+    const columns = 3;
+    const compact = width < 980 || height < 760;
+    const gapX = compact ? Math.max(12, Math.floor(width * 0.014)) : Math.max(20, Math.floor(width * 0.02));
+    const gapY = compact ? Math.max(12, Math.floor(height * 0.018)) : Math.max(16, Math.floor(height * 0.02));
     const cardWidth = Math.min(
-      420,
-      Math.max(280, Math.floor((width - gapX * 3) / columns)),
+      compact ? 292 : 388,
+      Math.max(compact ? 232 : 268, Math.floor((width - gapX * 4) / columns)),
     );
     const cardHeight = Math.min(
-      206,
-      Math.max(172, Math.floor(height * 0.31)),
+      compact ? 238 : 278,
+      Math.max(compact ? 204 : 220, Math.floor(height * 0.38)),
     );
     const rowCount = Math.ceil(Math.max(1, this.draftedCards.length) / columns);
     const totalWidth = columns * cardWidth + (columns - 1) * gapX;
     const totalHeight = rowCount * cardHeight + (rowCount - 1) * gapY;
     const originX = Math.max(16, Math.floor((width - totalWidth) / 2));
-    const originY = Math.max(132, Math.floor(height * 0.28 - totalHeight * 0.15));
+    const originY = Math.max(108, Math.floor(height * 0.24 - totalHeight * 0.06));
 
     return {
       cardWidth,
@@ -351,8 +364,8 @@ export class LevelUpUI {
     height: number,
   ): void {
     ctx.save();
-    ctx.globalAlpha = 0.4;
-    ctx.strokeStyle = "rgba(127,224,168,0.12)";
+    ctx.globalAlpha = 0.42;
+    ctx.strokeStyle = "rgba(255, 170, 196, 0.12)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(width * 0.5, height * 0.39, Math.min(width, height) * 0.18, 0, Math.PI * 2);
@@ -360,6 +373,28 @@ export class LevelUpUI {
     ctx.beginPath();
     ctx.arc(width * 0.5, height * 0.39, Math.min(width, height) * 0.26, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawBackdropSigils(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.strokeStyle = "rgba(255, 205, 220, 0.16)";
+    ctx.lineWidth = 1;
+    const radius = Math.min(width, height) * 0.12;
+    const sigilY = height * 0.34;
+    for (const offset of [-1, 0, 1]) {
+      const cx = width * 0.5 + offset * radius * 1.9;
+      ctx.beginPath();
+      ctx.arc(cx, sigilY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - radius * 0.65, sigilY);
+      ctx.lineTo(cx + radius * 0.65, sigilY);
+      ctx.moveTo(cx, sigilY - radius * 0.65);
+      ctx.lineTo(cx, sigilY + radius * 0.65);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

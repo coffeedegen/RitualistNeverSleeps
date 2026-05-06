@@ -113,7 +113,7 @@ export class LevelOfferBuilder {
         pushCandidate("weapon_upgrade", {
           accent: this.survivorAccentFromSeed(`wUpgrade:${lane.id}`),
           title: `Upgrade ${data.name}`,
-          effect: `${describeWeaponLoopEffect(data)}.`,
+          effect: describeWeaponLoopEffect(data),
           details: [
             `Level ${lane.level}/${data.maxLevel} -> ${lane.level + 1}/${data.maxLevel}`,
             formatWeaponDelta(current, next),
@@ -147,8 +147,8 @@ export class LevelOfferBuilder {
         pushCandidate("evolution", {
           accent: "#ff9f43",
           title: `Evolve - ${evolved.name}`,
-          effect: `${base.name} fuses into ${evolved.name} and keeps its attack pattern while becoming much stronger.`,
-          details: `Requires ${base.passiveRequirement} and max level ${base.maxLevel}.`,
+          effect: `${base.name} evolves into ${evolved.name}`,
+          details: `Need ${base.passiveRequirement} and max level ${base.maxLevel}.`,
           applySelection: () => {
             this.deps.weaponAccess.evolveWeaponLane(base.id);
             this.deps.refreshDerivedStats();
@@ -170,7 +170,7 @@ export class LevelOfferBuilder {
         pushCandidate("weapon_new", {
           accent: this.survivorAccentFromSeed(`weaponNew:${id}`),
           title: `Take ${data.name}`,
-          effect: `${data.name} joins your arsenal and ${describeWeaponLoopEffect(data).toLowerCase()}.`,
+          effect: describeWeaponLoopEffect(data),
           details: `Starts at level 1. ${describeWeaponBaseStats(data, combatTotals)}.`,
           applySelection: () => {
             this.deps.weaponAccess.acquireWeaponLane(id);
@@ -195,7 +195,7 @@ export class LevelOfferBuilder {
         pushCandidate("passive_new", {
           accent: this.survivorAccentFromSeed(`passive:${passiveId}`),
           title: `Take ${meta.name}`,
-          effect: `Grants ${meta.name} as a passive upgrade.`,
+          effect: `Adds ${meta.name} to your passive slots`,
           details: describePassiveDelta(meta.levelBonuses[0], meta.maxLevel),
           applySelection: () => {
             p.grantPassiveOrLevel(passiveId);
@@ -216,7 +216,7 @@ export class LevelOfferBuilder {
         pushCandidate("passive_rank", {
           accent: this.survivorAccentFromSeed(`rank:${lane.id}:${lane.level}`),
           title: `Rank Up ${meta.name}`,
-          effect: `${meta.name} gains another stack and strengthens its passive effect.`,
+          effect: `${meta.name} gains one rank`,
           details: [
             `Current level ${lane.level}/${meta.maxLevel}`,
             describePassiveDelta(nextBonus, meta.maxLevel),
@@ -235,7 +235,7 @@ export class LevelOfferBuilder {
       pushCandidate("stat_boost", {
         accent: "#7fe0a8",
         title: "Hearty Feast",
-        effect: "Raises max HP immediately and tops up your health.",
+        effect: "Raise max HP and heal now",
         details: "+15 max HP bonus. Heal 15 now.",
         applySelection: () => {
           this.deps.player.manualMaxHpBonus += 15;
@@ -250,7 +250,7 @@ export class LevelOfferBuilder {
       pushCandidate("stat_boost", {
         accent: "#ffd478",
         title: "Attractive Aura",
-        effect: "Widens your pickup magnet so gems come to you sooner.",
+        effect: "Increase pickup magnet range",
         details: "+20 magnet range.",
         applySelection: () => {
           this.deps.player.manualMagnetBonus += 20;
@@ -261,7 +261,7 @@ export class LevelOfferBuilder {
       pushCandidate("stat_boost", {
         accent: "#c892ff",
         title: "Fortune Surge",
-        effect: "Improves your luck and helps better options surface more often.",
+        effect: "Increase luck",
         details: "+0.2 luck.",
         applySelection: () => {
           this.deps.player.manualLuckBonus += 0.2;
@@ -272,7 +272,7 @@ export class LevelOfferBuilder {
       pushCandidate("stat_boost", {
         accent: "#f5f5f5",
         title: "Swift Stride",
-        effect: "Makes you move faster while keeping your normal control feel.",
+        effect: "Increase move speed",
         details: "+18 flat move speed.",
         applySelection: () => {
           this.deps.player.manualMoveBonus += 18;
@@ -283,7 +283,7 @@ export class LevelOfferBuilder {
       pushCandidate("stat_boost", {
         accent: "#6bcffb",
         title: "Scholar's Margin",
-        effect: "Boosts growth so XP gems push your level higher.",
+        effect: "Increase growth",
         details: "+5 baseline growth score before multipliers.",
         applySelection: () => {
           this.deps.player.manualGrowthBonus += 5;
@@ -303,7 +303,7 @@ export class LevelOfferBuilder {
     const seenTitles = new Set<string>();
 
     for (const candidate of evolutionCards) {
-      if (picked.length >= 4) {
+      if (picked.length >= 3) {
         break;
       }
       picked.push(candidate.offer);
@@ -313,7 +313,7 @@ export class LevelOfferBuilder {
     const weightedRegular = this.weightAndSortOffers(regularCards, p.luck);
 
     for (const candidate of weightedRegular) {
-      if (picked.length >= 4) {
+      if (picked.length >= 3) {
         break;
       }
       if (seenTitles.has(candidate.offer.title)) {
@@ -324,12 +324,12 @@ export class LevelOfferBuilder {
     }
 
     let emergencySerial = 0;
-    while (picked.length < 4) {
+    while (picked.length < 3) {
       emergencySerial += 1;
       picked.push({
         accent: "#7fe0a8",
         title: `Emergency ration ${emergencySerial}`,
-        effect: "Restores your survivability when the draft runs dry.",
+        effect: "Restore survivability",
         details: "+10 max HP bonus and immediate healing.",
         applySelection: () => {
           this.deps.player.manualMaxHpBonus += 10;
@@ -342,7 +342,7 @@ export class LevelOfferBuilder {
       });
     }
 
-    return picked.slice(0, 4);
+    return picked.slice(0, 3);
   }
 
   private weightAndSortOffers(
@@ -389,31 +389,31 @@ export class LevelOfferBuilder {
 function describeWeaponLoopEffect(data: WeaponData): string {
   switch (data.loopKind) {
     case "whip_arc":
-      return "lashes in a wide arc in front of you";
+      return "Lashes in a wide front arc";
     case "magic_barrage":
-      return "fires shots toward the nearest enemy";
+      return "Fires shots at the nearest enemy";
     case "knife_stream":
-      return "throws knives straight ahead";
+      return "Throws knives straight ahead";
     case "axe_lob":
-      return "throws arcing axes that crash down through enemies";
+      return "Throws arcing axes through enemies";
     case "cross_quartet":
-      return "throws a cross that can bounce between targets";
+      return "Throws a cross that can bounce between targets";
     case "bible_orbit":
-      return "orbits a single projectile around you and damages enemies it touches";
+      return "Orbits one projectile around you";
     case "fire_fan":
-      return "launches fire shots in a spread";
+      return "Launches fire shots in a spread";
     case "garlic_aura":
-      return "damages enemies close to you continuously";
+      return "Damages nearby enemies continuously";
     case "santa_pools":
-      return "creates dangerous pools on the ground";
+      return "Creates dangerous pools on the ground";
     case "rune_piercing":
-      return "fires piercing runes that pass through multiple enemies";
+      return "Fires piercing runes through enemies";
     case "lightning_bolt":
-      return "calls down lightning on enemies at range";
+      return "Calls down lightning at range";
     case "pentagram_shock":
-      return "unleashes a huge shockwave across the battlefield";
+      return "Unleashes a battlefield shockwave";
     default:
-      return "changes how it attacks";
+      return "Changes how it attacks";
   }
 }
 

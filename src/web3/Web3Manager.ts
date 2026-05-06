@@ -9,7 +9,8 @@ export interface Web3WalletData {
   address: string;
   chainId: number;
   balance: string;
-  provider: BrowserProvider;
+  provider: BrowserProvider | null;
+  xHandle?: string | null;
 }
 
 export interface Web3ManagerConfig {
@@ -28,6 +29,7 @@ export class Web3Manager {
   private chainId: number | null = null;
   private walletData: Web3WalletData | null = null;
   private config: Web3ManagerConfig = {};
+  private isDisconnecting = false;
 
   private constructor(config?: Web3ManagerConfig) {
     this.config = config || {};
@@ -129,13 +131,21 @@ export class Web3Manager {
   }
 
   disconnect(): void {
+    if (this.isDisconnecting) return;
+    this.isDisconnecting = true;
+
     this.provider = null;
     this.signer = null;
     this.userAddress = null;
     this.chainId = null;
     this.walletData = null;
     console.log("Wallet disconnected");
-    this.config.onDisconnected?.();
+
+    try {
+      this.config.onDisconnected?.();
+    } finally {
+      this.isDisconnecting = false;
+    }
   }
 
   isConnected(): boolean {
@@ -223,6 +233,23 @@ export class Web3Manager {
     args: any[] = [],
     value?: string
   ): Promise<any> {
+    const tx = await this.writeContractTx(
+      contractAddress,
+      contractAbi,
+      methodName,
+      args,
+      value,
+    );
+    return tx.wait();
+  }
+
+  async writeContractTx(
+    contractAddress: string,
+    contractAbi: any[],
+    methodName: string,
+    args: any[] = [],
+    value?: string
+  ): Promise<any> {
     if (!this.signer) {
       throw new Error("Web3Manager not connected. Call connectMetaMask first.");
     }
@@ -240,8 +267,7 @@ export class Web3Manager {
         throw new Error(`Method ${methodName} not found in contract`);
       }
       const tx = await method(...args, txOptions);
-      const receipt = await tx.wait();
-      return receipt;
+      return tx;
     } catch (error: any) {
       console.error(`Contract write error (${methodName}):`, error);
       throw new Error(

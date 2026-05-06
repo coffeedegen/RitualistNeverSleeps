@@ -57,10 +57,10 @@ export class FloatingDamageSystem {
    */
   renderWorld(ctx: CanvasRenderingContext2D): void {
     ctx.save();
-    ctx.font = "800 14px 'JetBrains Mono', monospace";
+    ctx.font = "800 15px 'JetBrains Mono', monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 5;
 
     for (const floater of this.floaters) {
       const alpha = clampScalar(
@@ -68,11 +68,16 @@ export class FloatingDamageSystem {
         0,
         1,
       );
+      const scale = 0.9 + (1 - alpha) * 0.18;
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = "rgba(0, 0, 0, 0.72)";
-      ctx.strokeText(floater.label, floater.worldX, floater.worldY);
-      ctx.fillStyle = alpha > 0.5 ? "#fff2bf" : "#ffc46b";
-      ctx.fillText(floater.label, floater.worldX, floater.worldY);
+      ctx.save();
+      ctx.translate(floater.worldX, floater.worldY);
+      ctx.scale(scale, scale);
+      ctx.strokeText(floater.label, 0, 0);
+      ctx.fillStyle = alpha > 0.5 ? "#fff3cf" : "#ffc66f";
+      ctx.fillText(floater.label, 0, 0);
+      ctx.restore();
     }
 
     ctx.restore();
