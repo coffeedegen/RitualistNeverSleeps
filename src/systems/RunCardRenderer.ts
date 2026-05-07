@@ -156,6 +156,13 @@ const RUN_CARD_THEMES: RunCardTheme[] = [
 ];
 
 const grainTileCache = new Map<string, HTMLCanvasElement>();
+const SCREEN_CARD_BASE_WIDTH = 1040;
+const SCREEN_CARD_BASE_HEIGHT = 700;
+const RUN_CARD_MAX_SKILLS = 3;
+const RUN_CARD_MAX_ENEMIES = 3;
+const RITUAL_WATERMARK_SRC = "/assets/ui/translucent.png";
+let ritualWatermarkImage: HTMLImageElement | null = null;
+let ritualWatermarkRequested = false;
 
 export function buildXShareText(score: number): string {
   return [
@@ -182,12 +189,15 @@ export function renderRunCard(
 ): void {
   const theme = pickRunCardTheme(summary);
   const exportMode = options.mode === "export";
-  const frame = measureRunCard(width, height);
+  const frame = measureRunCard(width, height, exportMode ? "export" : "screen");
   const cardX = frame.x;
   const cardY = frame.y;
   const cardW = frame.w;
   const cardH = frame.h;
-  const innerPad = Math.max(24, Math.floor(cardW * 0.032));
+  const compactCard = false;
+  const innerPad = compactCard
+    ? Math.max(16, Math.floor(cardW * 0.024))
+    : Math.max(24, Math.floor(cardW * 0.032));
   const accent = theme.primary;
   const warm = theme.secondary;
   const gold = theme.gold;
@@ -223,6 +233,29 @@ export function renderRunCard(
   roundRect(ctx, cardX, cardY, cardW, cardH, 28);
   ctx.stroke();
 
+  // Collectible-frame corner accents.
+  const cornerLen = Math.max(18, Math.floor(cardW * 0.028));
+  ctx.strokeStyle = withAlpha(accent, 0.62);
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cardX + 16, cardY + 16);
+  ctx.lineTo(cardX + 16 + cornerLen, cardY + 16);
+  ctx.moveTo(cardX + 16, cardY + 16);
+  ctx.lineTo(cardX + 16, cardY + 16 + cornerLen);
+  ctx.moveTo(cardX + cardW - 16, cardY + 16);
+  ctx.lineTo(cardX + cardW - 16 - cornerLen, cardY + 16);
+  ctx.moveTo(cardX + cardW - 16, cardY + 16);
+  ctx.lineTo(cardX + cardW - 16, cardY + 16 + cornerLen);
+  ctx.moveTo(cardX + 16, cardY + cardH - 16);
+  ctx.lineTo(cardX + 16 + cornerLen, cardY + cardH - 16);
+  ctx.moveTo(cardX + 16, cardY + cardH - 16);
+  ctx.lineTo(cardX + 16, cardY + cardH - 16 - cornerLen);
+  ctx.moveTo(cardX + cardW - 16, cardY + cardH - 16);
+  ctx.lineTo(cardX + cardW - 16 - cornerLen, cardY + cardH - 16);
+  ctx.moveTo(cardX + cardW - 16, cardY + cardH - 16);
+  ctx.lineTo(cardX + cardW - 16, cardY + cardH - 16 - cornerLen);
+  ctx.stroke();
+
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
   roundRect(ctx, cardX + 6, cardY + 6, cardW - 12, cardH - 12, 22);
@@ -235,6 +268,21 @@ export function renderRunCard(
   ctx.fillStyle = topWash;
   roundRect(ctx, cardX + 1, cardY + 1, cardW - 2, 180, 28);
   ctx.fill();
+
+  if (exportMode) {
+    // Metallic top trim reserved for exported card art.
+    const trimW = Math.min(cardW * 0.42, 380);
+    const trimH = 22;
+    const trimX = cardX + (cardW - trimW) / 2;
+    const trimY = cardY + 10;
+    const trimGrad = ctx.createLinearGradient(trimX, trimY, trimX + trimW, trimY + trimH);
+    trimGrad.addColorStop(0, "rgba(220,230,255,0.55)");
+    trimGrad.addColorStop(0.5, withAlpha(accent, 0.5));
+    trimGrad.addColorStop(1, "rgba(220,230,255,0.55)");
+    ctx.fillStyle = trimGrad;
+    roundRect(ctx, trimX, trimY, trimW, trimH, 8);
+    ctx.fill();
+  }
 
   const cornerBloom = ctx.createRadialGradient(
     cardX + cardW * 0.12,
@@ -265,25 +313,46 @@ export function renderRunCard(
   ctx.fillRect(cardX, cardY, cardW, cardH);
 
   drawPaperGrain(ctx, cardX, cardY, cardW, cardH, summary.serialNumber, theme, exportMode);
+  drawCardWatermark(ctx, cardX, cardY, cardW, cardH);
 
   // Header
-  const titleY = cardY + innerPad + 18;
-  ctx.fillStyle = "#f9fbff";
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.shadowColor = "rgba(65, 211, 124, 0.7)";
-  ctx.shadowBlur = exportMode ? 22 : 16;
+  ctx.shadowBlur = 0;
+  if (exportMode) {
+    ctx.fillStyle = "rgba(230,239,255,0.95)";
+    ctx.font = `900 ${compactCard ? 11 : 14}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+    ctx.fillText("MINTABLE CARD", cardX + cardW * 0.5, cardY + innerPad - (compactCard ? 7 : 10));
+    ctx.fillStyle = withAlpha(gold, 0.88);
+    ctx.font = `800 ${compactCard ? 9 : 11}px 'JetBrains Mono', monospace`;
+    ctx.fillText("LEGENDARY ACHIEVEMENT", cardX + cardW * 0.5, cardY + innerPad + (compactCard ? 5 : 6));
+  }
+
+  const titleY = cardY + innerPad + (exportMode ? (compactCard ? 22 : 30) : (compactCard ? 20 : 22));
+  const cardTitleFill = ctx.createLinearGradient(0, titleY - 22, 0, titleY + 10);
+  cardTitleFill.addColorStop(0, "rgba(246,252,255,0.96)");
+  cardTitleFill.addColorStop(0.58, "rgba(228,244,255,0.92)");
+  cardTitleFill.addColorStop(1, "rgba(194,230,215,0.9)");
+  ctx.fillStyle = cardTitleFill;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.shadowColor = "rgba(65, 211, 124, 0.42)";
+  ctx.shadowBlur = exportMode ? 16 : (compactCard ? 9 : 12);
   fitCenteredTitle(
     ctx,
     "RITUALIST NEVER SLEEPS",
     cardX + cardW * 0.5,
     titleY,
     cardW - innerPad * 2 - 20,
-    Math.max(35, Math.min(51, Math.floor(cardW * 0.04725))),
-    23,
+    compactCard ? Math.max(24, Math.min(34, Math.floor(cardW * 0.035))) : Math.max(30, Math.min(44, Math.floor(cardW * 0.0415))),
+    compactCard ? 18 : 21,
   );
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(246,252,255,0.26)";
+  ctx.strokeText("RITUALIST NEVER SLEEPS", cardX + cardW * 0.5, titleY);
+  ctx.shadowBlur = 0;
 
-  const titleRuleY = titleY + 16;
+  const titleRuleY = titleY + (compactCard ? 14 : 16);
   ctx.strokeStyle = withAlpha(accent, 0.22);
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -291,9 +360,11 @@ export function renderRunCard(
   ctx.lineTo(cardX + cardW * 0.8, titleRuleY);
   ctx.stroke();
 
-  const avatarSize = Math.max(156, Math.min(205, Math.floor(cardW * 0.184)));
+  const avatarSize = compactCard
+    ? Math.max(116, Math.min(158, Math.floor(cardW * 0.16)))
+    : Math.max(156, Math.min(205, Math.floor(cardW * 0.184)));
   const avatarX = cardX + innerPad;
-  const avatarY = titleRuleY + 24;
+  const avatarY = titleRuleY + (compactCard ? 10 : 16);
   drawAvatar(
     ctx,
     avatarX,
@@ -305,26 +376,85 @@ export function renderRunCard(
     theme,
   );
 
+  const scoreBlockW = compactCard ? Math.min(250, Math.floor(cardW * 0.31)) : Math.min(308, Math.floor(cardW * 0.31));
+  const scoreBlockH = compactCard ? 104 : 126;
+  const scoreBlockX = cardX + cardW - innerPad - scoreBlockW;
+  const scoreBlockY = avatarY + (compactCard ? 6 : 8);
+  const scoreFill = ctx.createLinearGradient(scoreBlockX, scoreBlockY, scoreBlockX, scoreBlockY + scoreBlockH);
+  scoreFill.addColorStop(0, withAlpha(accent, 0.20));
+  scoreFill.addColorStop(1, "rgba(11, 16, 20, 0.92)");
+  ctx.fillStyle = scoreFill;
+  roundRect(ctx, scoreBlockX, scoreBlockY, scoreBlockW, scoreBlockH, compactCard ? 16 : 20);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(127,224,168,0.28)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, scoreBlockX, scoreBlockY, scoreBlockW, scoreBlockH, compactCard ? 16 : 20);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  roundRect(ctx, scoreBlockX + 1, scoreBlockY + 1, scoreBlockW - 2, scoreBlockH - 2, compactCard ? 15 : 19);
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.stroke();
+
+  const scorePad = compactCard ? 12 : 16;
+  ctx.fillStyle = "rgba(255,255,255,0.58)";
+  ctx.font = `700 ${compactCard ? 9 : 10}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = "left";
+  ctx.fillText("FINAL SCORE", scoreBlockX + scorePad, scoreBlockY + (compactCard ? 19 : 24));
+
+  const scoreText = summary.score.toLocaleString();
+  const scoreFontSize = fitTextWidth(
+    ctx,
+    scoreText,
+    scoreBlockW - scorePad * 2,
+    compactCard ? 26 : 32,
+    compactCard ? 15 : 18,
+    "900",
+    "'Space Grotesk', 'Segoe UI', sans-serif",
+  );
+  ctx.fillStyle = "#f9fbff";
+  ctx.font = `900 ${scoreFontSize}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.textAlign = "right";
+  ctx.fillText(scoreText, scoreBlockX + scoreBlockW - scorePad, scoreBlockY + (compactCard ? 49 : 60));
+
+  const killsValue = summary.kills.toLocaleString();
+  const killsY = scoreBlockY + (compactCard ? 84 : 92);
+  ctx.fillStyle = "rgba(255,255,255,0.52)";
+  ctx.font = `700 ${compactCard ? 9 : 10}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = "left";
+  ctx.fillText("KILLS", scoreBlockX + scorePad, killsY);
+  ctx.fillStyle = withAlpha(accent, 0.95);
+  ctx.font = `800 ${compactCard ? 13 : 15}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.textAlign = "right";
+  ctx.fillText(killsValue, scoreBlockX + scoreBlockW - scorePad, killsY);
+
+  const identityX = avatarX + avatarSize + (compactCard ? 18 : 28);
+  const identityMaxW = Math.max(120, scoreBlockX - identityX - (compactCard ? 14 : 18));
   ctx.textAlign = "left";
   ctx.shadowBlur = 0;
   ctx.fillStyle = "rgba(247,242,222,0.96)";
-  ctx.font = "800 25px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.fillText(summary.displayName, avatarX + avatarSize + 28, avatarY + 34);
+  const nameFont = compactCard ? "800 19px 'Space Grotesk', 'Segoe UI', sans-serif" : "800 25px 'Space Grotesk', 'Segoe UI', sans-serif";
+  ctx.font = nameFont;
+  const safeDisplayName = clampTextTail(ctx, summary.displayName, identityMaxW, nameFont);
+  ctx.fillText(safeDisplayName, identityX, avatarY + (compactCard ? 27 : 34));
 
   ctx.fillStyle = "rgba(219,228,255,0.66)";
-  ctx.font = "600 12px 'JetBrains Mono', monospace";
+  const handleFont = compactCard ? "600 10px 'JetBrains Mono', monospace" : "600 12px 'JetBrains Mono', monospace";
+  ctx.font = handleFont;
   const handleLine = summary.xHandle ? `@${summary.xHandle}` : "No X handle linked";
-  ctx.fillText(handleLine, avatarX + avatarSize + 28, avatarY + 56);
+  ctx.fillText(clampTextTail(ctx, handleLine, identityMaxW, handleFont), identityX, avatarY + (compactCard ? 45 : 56));
 
   ctx.fillStyle = "rgba(219,228,255,0.58)";
-  ctx.font = "500 11px 'JetBrains Mono', monospace";
-  ctx.fillText(shortenWallet(summary.walletAddress), avatarX + avatarSize + 28, avatarY + 76);
+  const walletFont = compactCard ? "500 9px 'JetBrains Mono', monospace" : "500 11px 'JetBrains Mono', monospace";
+  ctx.font = walletFont;
+  ctx.fillText(clampTextTail(ctx, shortenWallet(summary.walletAddress), identityMaxW, walletFont), identityX, avatarY + (compactCard ? 61 : 76));
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "900 22px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.fillText(summary.rankTitle, avatarX + avatarSize + 28, avatarY + 106);
+  const rankFont = compactCard ? "900 18px 'Space Grotesk', 'Segoe UI', sans-serif" : "900 22px 'Space Grotesk', 'Segoe UI', sans-serif";
+  ctx.font = rankFont;
+  ctx.fillText(clampTextTail(ctx, summary.rankTitle, identityMaxW, rankFont), identityX, avatarY + (compactCard ? 84 : 106));
 
-  const headerRuleY = avatarY + avatarSize + 14;
+  const headerRuleY = Math.max(avatarY + avatarSize, scoreBlockY + scoreBlockH) + (compactCard ? 8 : 10);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -332,118 +462,122 @@ export function renderRunCard(
   ctx.lineTo(cardX + cardW - innerPad, headerRuleY);
   ctx.stroke();
 
-  const scoreBlockW = Math.min(280, Math.floor(cardW * 0.28));
-  const scoreBlockH = 126;
-  const scoreBlockX = cardX + cardW - innerPad - scoreBlockW;
-  const scoreBlockY = avatarY + 8;
-  const scoreFill = ctx.createLinearGradient(scoreBlockX, scoreBlockY, scoreBlockX, scoreBlockY + scoreBlockH);
-  scoreFill.addColorStop(0, withAlpha(accent, 0.20));
-  scoreFill.addColorStop(1, "rgba(11, 16, 20, 0.92)");
-  ctx.fillStyle = scoreFill;
-  roundRect(ctx, scoreBlockX, scoreBlockY, scoreBlockW, scoreBlockH, 20);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(127,224,168,0.28)";
-  ctx.lineWidth = 1;
-  roundRect(ctx, scoreBlockX, scoreBlockY, scoreBlockW, scoreBlockH, 20);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.06)";
-  roundRect(ctx, scoreBlockX + 1, scoreBlockY + 1, scoreBlockW - 2, scoreBlockH - 2, 19);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.font = "700 10px 'JetBrains Mono', monospace";
-  ctx.fillText("FINAL SCORE", scoreBlockX + 18, scoreBlockY + 24);
-
-  ctx.fillStyle = "#f9fbff";
-  ctx.font = "900 32px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.fillText(summary.score.toLocaleString(), scoreBlockX + 18, scoreBlockY + 60);
-
-  ctx.fillStyle = withAlpha(accent, 0.9);
-  ctx.font = "600 11px 'JetBrains Mono', monospace";
-  ctx.fillText(`Kills ${summary.kills.toLocaleString()}`, scoreBlockX + 18, scoreBlockY + 86);
-
-  const statsY = headerRuleY + 24;
-  const pillWidth = Math.floor((cardW - innerPad * 2 - 24) / 3);
-  drawStatPill(ctx, cardX + innerPad, statsY, pillWidth, "KILLS", `${summary.kills}`, accent);
+  const statsY = headerRuleY + (compactCard ? 12 : 18);
+  const statGap = compactCard ? 8 : 12;
+  const pillWidth = Math.floor((cardW - innerPad * 2 - statGap * 2) / 3);
+  drawStatPill(ctx, cardX + innerPad, statsY, pillWidth, "☠ KILLS", `${summary.kills}`, accent, compactCard);
   drawStatPill(
     ctx,
-    cardX + innerPad + pillWidth + 12,
+    cardX + innerPad + pillWidth + statGap,
     statsY,
     pillWidth,
-    "TIME",
+    "◷ TIME",
     formatRunDuration(summary.survivedMs),
     blue,
+    compactCard,
   );
   drawStatPill(
     ctx,
-    cardX + innerPad + (pillWidth + 12) * 2,
+    cardX + innerPad + (pillWidth + statGap) * 2,
     statsY,
     pillWidth,
-    "LEVEL",
+    "✦ LEVEL",
     `${summary.level}`,
     gold,
+    compactCard,
   );
 
-  const contentBandY = statsY + 64;
+  const statPillH = compactCard ? 42 : 48;
+  const contentBandY = statsY + statPillH + (compactCard ? 8 : 10);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(cardX + innerPad, contentBandY - 12);
-  ctx.lineTo(cardX + cardW - innerPad, contentBandY - 12);
+  ctx.moveTo(cardX + innerPad, contentBandY - (compactCard ? 8 : 12));
+  ctx.lineTo(cardX + cardW - innerPad, contentBandY - (compactCard ? 8 : 12));
   ctx.stroke();
 
-  const contentTop = contentBandY + 10;
-  const contentHeight = cardY + cardH - innerPad * 1.45 - contentTop - 168;
-  const leftColW = Math.floor((cardW - innerPad * 2 - 18) * 0.56);
-  const rightColW = cardW - innerPad * 2 - 18 - leftColW;
+  const footerY = cardY + cardH - (compactCard ? 30 : 48);
+  const serialY = footerY - (compactCard ? 20 : 28);
+  const metaChipH = compactCard ? 34 : 44;
+  const metaBandY = serialY - metaChipH - (compactCard ? 12 : 18);
+
+  const contentTop = contentBandY + (compactCard ? 8 : 10);
+  const contentBottom = metaBandY - (compactCard ? 14 : 18);
+  const contentHeight = Math.max(compactCard ? 84 : 118, contentBottom - contentTop);
+  const leftColW = Math.floor((cardW - innerPad * 2 - (compactCard ? 12 : 18)) * 0.56);
+  const rightColW = cardW - innerPad * 2 - (compactCard ? 12 : 18) - leftColW;
   const leftX = cardX + innerPad;
-  const rightX = leftX + leftColW + 18;
+  const rightX = leftX + leftColW + (compactCard ? 12 : 18);
 
-  drawSectionLabel(ctx, leftX, contentTop, "SKILLS", accent);
-  drawSectionLabel(ctx, rightX, contentTop, "ENEMY BREAKDOWN", warm);
+  drawSectionLabel(ctx, leftX, contentTop, "SKILLS", accent, compactCard);
+  drawSectionLabel(ctx, rightX, contentTop, "ENEMY BREAKDOWN", warm, compactCard);
 
-  const dividerX = leftX + leftColW + 9;
+  const dividerX = leftX + leftColW + (compactCard ? 6 : 9);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.beginPath();
   ctx.moveTo(dividerX, contentTop + 4);
   ctx.lineTo(dividerX, contentTop + contentHeight - 8);
   ctx.stroke();
 
-  const skillStartY = contentTop + 24;
-  drawSkillGrid(ctx, summary.skills, leftX, skillStartY, leftColW, contentHeight - 24);
-  drawEnemyBreakdown(ctx, summary.enemyKills, rightX, skillStartY, rightColW, contentHeight - 24, warm);
+  const skillStartY = contentTop + (compactCard ? 18 : 24);
+  drawSkillGrid(ctx, summary.skills, leftX, skillStartY, leftColW, contentHeight - (compactCard ? 18 : 24), compactCard);
+  drawEnemyBreakdown(
+    ctx,
+    summary.enemyKills,
+    rightX,
+    skillStartY,
+    rightColW,
+    contentHeight - (compactCard ? 18 : 24),
+    warm,
+    compactCard,
+  );
 
   drawRunSigil(ctx, cardX, cardY, cardW, cardH, theme);
 
-  drawMetadataBand(ctx, summary, cardX, cardY, cardW, cardH, theme);
+  drawMetadataBand(ctx, summary, cardX, cardW, metaBandY, metaChipH, serialY, theme, compactCard);
 
-  const footerY = cardY + cardH - 48;
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.beginPath();
-  ctx.moveTo(cardX + innerPad, footerY - 14);
-  ctx.lineTo(cardX + cardW - innerPad, footerY - 14);
+  ctx.moveTo(cardX + innerPad, footerY - (compactCard ? 10 : 14));
+  ctx.lineTo(cardX + cardW - innerPad, footerY - (compactCard ? 10 : 14));
   ctx.stroke();
 
   ctx.fillStyle = "rgba(255,255,255,0.64)";
-  ctx.font = "600 10px 'JetBrains Mono', monospace";
+  ctx.font = `600 ${compactCard ? 8 : 10}px 'JetBrains Mono', monospace`;
   ctx.fillText(exportMode ? "EXPORT EDITION / PRINT READY" : "MINTABLE CARD / SHARE READY", cardX + innerPad, footerY);
 
   ctx.fillStyle = "rgba(219,228,255,0.5)";
-  ctx.font = "600 9px 'JetBrains Mono', monospace";
-  ctx.fillText("gRitual", cardX + cardW - innerPad - 46, footerY);
+  ctx.font = `600 ${compactCard ? 8 : 9}px 'JetBrains Mono', monospace`;
+  ctx.fillText("gRitual", cardX + cardW - innerPad - (compactCard ? 38 : 46), footerY);
 
   ctx.restore();
 }
 
-export function measureRunCard(width: number, height: number): RunCardFrame {
-  const compact = width < 900 || height < 760;
-  const cardW = Math.min(width * (compact ? 0.94 : 0.88), compact ? 760 : 980);
-  const cardH = Math.min(height * (compact ? 0.68 : 0.8), compact ? 880 : 1220);
+export function measureRunCard(width: number, height: number, mode: RunCardMode = "screen"): RunCardFrame {
+  if (mode === "export") {
+    const cardW = Math.min(width * 0.9, 1080);
+    const cardH = Math.min(height * 0.78, 1320);
+    return {
+      x: Math.floor((width - cardW) / 2),
+      y: Math.floor((height - cardH) / 2 - height * 0.01),
+      w: cardW,
+      h: cardH,
+    };
+  }
+
+  const maxW = width * 0.86;
+  const maxH = height * 0.68;
+  const scale = clamp(
+    Math.min(maxW / SCREEN_CARD_BASE_WIDTH, maxH / SCREEN_CARD_BASE_HEIGHT),
+    0.58,
+    1,
+  );
+  const cardW = Math.floor(SCREEN_CARD_BASE_WIDTH * scale);
+  const cardH = Math.floor(SCREEN_CARD_BASE_HEIGHT * scale);
+  const yOffset = Math.floor(height * 0.01);
   return {
     x: Math.floor((width - cardW) / 2),
-    y: Math.floor((height - cardH) / 2 - height * (compact ? 0.005 : 0.01)),
+    y: Math.floor((height - cardH) / 2 + yOffset),
     w: cardW,
     h: cardH,
   };
@@ -457,24 +591,27 @@ function drawStatPill(
   label: string,
   value: string,
   accent: string,
+  compact = false,
 ): void {
+  const pillH = compact ? 42 : 48;
+  const radius = compact ? 13 : 16;
   ctx.fillStyle = "rgba(255,255,255,0.05)";
-  roundRect(ctx, x, y, w, 48, 16);
+  roundRect(ctx, x, y, w, pillH, radius);
   ctx.fill();
   ctx.strokeStyle = withAlpha(accent, 0.22);
   ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, 48, 16);
+  roundRect(ctx, x, y, w, pillH, radius);
   ctx.stroke();
 
   ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.font = "700 8px 'JetBrains Mono', monospace";
+  ctx.font = `700 ${compact ? 7 : 8}px 'JetBrains Mono', monospace`;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(label, x + 14, y + 8);
+  ctx.fillText(label, x + (compact ? 11 : 14), y + (compact ? 7 : 8));
 
   ctx.fillStyle = "#f8f6ff";
-  ctx.font = "800 17px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.fillText(value, x + 14, y + 22);
+  ctx.font = `800 ${compact ? 15 : 17}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.fillText(value, x + (compact ? 11 : 14), y + (compact ? 19 : 22));
 }
 
 function drawSectionLabel(
@@ -483,14 +620,15 @@ function drawSectionLabel(
   y: number,
   label: string,
   accent: string,
+  compact = false,
 ): void {
   ctx.fillStyle = withAlpha(accent, 0.94);
-  ctx.font = "700 10px 'JetBrains Mono', monospace";
+  ctx.font = `700 ${compact ? 8 : 10}px 'JetBrains Mono', monospace`;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillText(label, x, y);
   ctx.fillStyle = "rgba(255,255,255,0.14)";
-  ctx.fillRect(x, y + 6, 132, 1);
+  ctx.fillRect(x, y + (compact ? 5 : 6), compact ? 104 : 132, 1);
 }
 
 function drawSkillGrid(
@@ -500,13 +638,15 @@ function drawSkillGrid(
   y: number,
   width: number,
   height: number,
+  compact = false,
 ): void {
-  const chipsPerRow = width < 330 ? 2 : 3;
-  const chipGap = 12;
+  const cappedSkills = skills.slice(0, RUN_CARD_MAX_SKILLS);
+  const chipsPerRow = compact ? 2 : (width < 330 ? 2 : 3);
+  const chipGap = compact ? 8 : 12;
   const chipW = Math.floor((width - chipGap * (chipsPerRow - 1)) / chipsPerRow);
-  const chipH = 46;
+  const chipH = compact ? 40 : 46;
   const maxRows = Math.max(1, Math.floor(height / (chipH + chipGap)));
-  const visible = skills.slice(0, maxRows * chipsPerRow);
+  const visible = cappedSkills.slice(0, maxRows * chipsPerRow);
 
   let chipIndex = 0;
   for (const skill of visible) {
@@ -515,7 +655,7 @@ function drawSkillGrid(
     const chipX = x + col * (chipW + chipGap);
     const chipY = y + row * (chipH + chipGap);
     const accent = skill.kind === "weapon" ? "#7b8cff" : "#7fe0a8";
-    drawSkillChip(ctx, chipX, chipY, chipW, chipH, skill, accent);
+    drawSkillChip(ctx, chipX, chipY, chipW, chipH, skill, accent, compact);
     chipIndex += 1;
   }
 
@@ -523,8 +663,9 @@ function drawSkillGrid(
     const overflowRow = Math.floor(visible.length / chipsPerRow);
     const overflowY = y + overflowRow * (chipH + chipGap);
     ctx.fillStyle = "rgba(255,255,255,0.48)";
-    ctx.font = "600 10px 'JetBrains Mono', monospace";
-    ctx.fillText(`+${skills.length - visible.length} more`, x, overflowY + chipH + 12);
+    ctx.font = `600 ${compact ? 9 : 10}px 'JetBrains Mono', monospace`;
+    const remaining = skills.length - visible.length;
+    ctx.fillText(`+${remaining} more`, x, overflowY + chipH + (compact ? 9 : 12));
   }
 }
 
@@ -536,34 +677,44 @@ function drawSkillChip(
   h: number,
   skill: RunCardSkill,
   accent: string,
+  compact = false,
 ): void {
   const fill = ctx.createLinearGradient(x, y, x, y + h);
   fill.addColorStop(0, "rgba(255,255,255,0.06)");
   fill.addColorStop(1, "rgba(255,255,255,0.02)");
   ctx.fillStyle = fill;
-  roundRect(ctx, x, y, w, h, 14);
+  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
   ctx.fill();
   ctx.strokeStyle = withAlpha(accent, 0.28);
   ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, h, 14);
+  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
   ctx.stroke();
 
   const glyph = glyphForSkill(skill);
-  drawGlyphBadge(ctx, x + 14, y + 14, 18, glyph, accent);
+  if (compact) {
+    drawGlyphBadge(ctx, x + 10, y + 11, 14, glyph, accent);
+  } else {
+    drawGlyphBadge(ctx, x + 14, y + 14, 18, glyph, accent);
+  }
 
   ctx.fillStyle = withAlpha(accent, 0.88);
-  ctx.font = "700 8px 'JetBrains Mono', monospace";
+  ctx.font = `700 ${compact ? 7 : 8}px 'JetBrains Mono', monospace`;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(skill.kind === "weapon" ? "WEAPON" : "PASSIVE", x + 38, y + 8);
+  const tagX = compact ? x + 29 : x + 38;
+  ctx.fillText(skill.kind === "weapon" ? "WEAPON" : "PASSIVE", tagX, y + (compact ? 6 : 8));
 
   ctx.fillStyle = "#f8f6ff";
-  ctx.font = "700 12px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.fillText(skill.label, x + 38, y + 24);
+  const skillFont = compact ? "700 10px 'Space Grotesk', 'Segoe UI', sans-serif" : "700 12px 'Space Grotesk', 'Segoe UI', sans-serif";
+  ctx.font = skillFont;
+  const safeLabel = clampTextTail(ctx, skill.label, w - (compact ? 62 : 82), skillFont);
+  ctx.fillText(safeLabel, tagX, y + (compact ? 18 : 24));
 
   ctx.fillStyle = "rgba(219,228,255,0.68)";
-  ctx.font = "700 9px 'JetBrains Mono', monospace";
-  ctx.fillText(`Lv ${skill.level}`, x + w - 44, y + h - 11);
+  ctx.font = `700 ${compact ? 8 : 9}px 'JetBrains Mono', monospace`;
+  const levelText = `Lv ${skill.level}`;
+  const levelX = x + w - (compact ? 6 : 10) - ctx.measureText(levelText).width;
+  ctx.fillText(levelText, levelX, y + h - (compact ? 9 : 11));
 }
 
 function drawEnemyBreakdown(
@@ -574,15 +725,17 @@ function drawEnemyBreakdown(
   width: number,
   height: number,
   accent: string,
+  compact = false,
 ): void {
-  const rowH = 38;
+  const cappedEnemies = enemies.slice(0, RUN_CARD_MAX_ENEMIES);
+  const rowH = compact ? 34 : 38;
   const rows = Math.max(1, Math.floor(height / rowH));
-  const visible = enemies.slice(0, rows);
+  const visible = cappedEnemies.slice(0, rows);
   const maxCount = Math.max(1, ...visible.map((entry) => entry.count));
 
   if (visible.length === 0) {
     ctx.fillStyle = "rgba(255,255,255,0.42)";
-    ctx.font = "600 12px 'Inter', sans-serif";
+    ctx.font = `600 ${compact ? 10 : 12}px 'Inter', sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
     ctx.fillText("No enemy kills recorded yet.", x, y + 16);
@@ -597,45 +750,52 @@ function drawEnemyBreakdown(
     rowFill.addColorStop(0, "rgba(255,255,255,0.06)");
     rowFill.addColorStop(1, "rgba(255,255,255,0.03)");
     ctx.fillStyle = rowFill;
-    roundRect(ctx, x, rowY, width, rowH - 10, 12);
+    roundRect(ctx, x, rowY, width, rowH - (compact ? 8 : 10), compact ? 9 : 12);
     ctx.fill();
     ctx.strokeStyle = "rgba(255,107,122,0.18)";
     ctx.lineWidth = 1;
-    roundRect(ctx, x, rowY, width, rowH - 10, 12);
+    roundRect(ctx, x, rowY, width, rowH - (compact ? 8 : 10), compact ? 9 : 12);
     ctx.stroke();
 
     const glyph = glyphForEnemy(entry);
-    drawGlyphBadge(ctx, x + 14, rowY + 11, 18, glyph, accent);
+    if (compact) {
+      drawGlyphBadge(ctx, x + 10, rowY + 9, 14, glyph, accent);
+    } else {
+      drawGlyphBadge(ctx, x + 14, rowY + 11, 18, glyph, accent);
+    }
 
     ctx.fillStyle = "#f9fbff";
-    ctx.font = "700 11px 'Inter', sans-serif";
+    const labelFont = compact ? "700 10px 'Inter', sans-serif" : "700 11px 'Inter', sans-serif";
+    ctx.font = labelFont;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(entry.label, x + 40, rowY + 12);
+    const labelMaxW = width - (compact ? 92 : 100);
+    const safeEnemyLabel = clampTextTail(ctx, entry.label, labelMaxW, labelFont);
+    ctx.fillText(safeEnemyLabel, x + (compact ? 30 : 40), rowY + (compact ? 11 : 12));
 
     const countText = entry.count.toLocaleString();
     ctx.fillStyle = "#ffd86b";
-    ctx.font = "800 12px 'JetBrains Mono', monospace";
-    ctx.fillText(countText, x + width - 14 - ctx.measureText(countText).width, rowY + 12);
+    ctx.font = `800 ${compact ? 11 : 12}px 'JetBrains Mono', monospace`;
+    ctx.fillText(countText, x + width - (compact ? 10 : 14) - ctx.measureText(countText).width, rowY + (compact ? 11 : 12));
 
-    const barX = x + 12;
-    const barY = rowY + 27;
-    const barW = width - 24;
+    const barX = x + (compact ? 9 : 12);
+    const barY = rowY + (compact ? 23 : 27);
+    const barW = width - (compact ? 18 : 24);
     const barRatio = entry.count / maxCount;
     ctx.fillStyle = "rgba(255,255,255,0.05)";
-    roundRect(ctx, barX, barY, barW, 4, 99);
+    roundRect(ctx, barX, barY, barW, compact ? 3 : 4, 99);
     ctx.fill();
     ctx.fillStyle = withAlpha("#ff6b7a", 0.58);
-    roundRect(ctx, barX, barY, Math.max(8, barW * barRatio), 4, 99);
+    roundRect(ctx, barX, barY, Math.max(compact ? 6 : 8, barW * barRatio), compact ? 3 : 4, 99);
     ctx.fill();
   });
 
   if (enemies.length > visible.length) {
     ctx.fillStyle = "rgba(255,255,255,0.48)";
-    ctx.font = "600 10px 'JetBrains Mono', monospace";
+    ctx.font = `600 ${compact ? 9 : 10}px 'JetBrains Mono', monospace`;
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(`+${enemies.length - visible.length} more`, x, y + visible.length * rowH + 8);
+    ctx.fillText(`+${enemies.length - visible.length} more`, x, y + visible.length * rowH + (compact ? 6 : 8));
   }
 }
 
@@ -745,6 +905,22 @@ function drawRunSigil(
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
+  // Hero panel behind sigil.
+  const panelW = outer * 2.6;
+  const panelH = outer * 1.9;
+  const panelX = centerX - panelW / 2;
+  const panelY = centerY - panelH / 2;
+  const panelGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+  panelGrad.addColorStop(0, "rgba(22, 30, 48, 0.22)");
+  panelGrad.addColorStop(1, "rgba(8, 12, 22, 0.14)");
+  ctx.fillStyle = panelGrad;
+  roundRect(ctx, panelX, panelY, panelW, panelH, 14);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(220,232,255,0.08)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, panelX, panelY, panelW, panelH, 14);
+  ctx.stroke();
+
   ctx.strokeStyle = theme.sigilTint;
   ctx.lineWidth = 1.05;
 
@@ -784,17 +960,18 @@ function drawMetadataBand(
   ctx: CanvasRenderingContext2D,
   summary: RunCardSummary,
   cardX: number,
-  cardY: number,
   cardW: number,
-  cardH: number,
+  bandY: number,
+  chipH: number,
+  serialY: number,
   theme: RunCardTheme,
+  compact = false,
 ): void {
-  const bandX = cardX + 24;
-  const bandW = cardW - 48;
-  const bandY = cardY + cardH - 162;
-  const chipGap = 10;
+  const sideInset = compact ? 16 : 24;
+  const bandX = cardX + sideInset;
+  const bandW = cardW - sideInset * 2;
+  const chipGap = compact ? 8 : 10;
   const chipW = Math.floor((bandW - chipGap * 2) / 3);
-  const chipH = 44;
 
   const chips = [
     { label: "CHAIN", value: "Ritual Chain" },
@@ -810,16 +987,18 @@ function drawMetadataBand(
     }
 
     const chipX = bandX + idx * (chipW + chipGap);
-    drawMetaChip(ctx, chipX, bandY, chipW, chipH, chip.label, chip.value, theme);
+    drawMetaChip(ctx, chipX, bandY, chipW, chipH, chip.label, chip.value, theme, compact);
   }
 
-  const serialY = bandY + chipH + 22;
   ctx.fillStyle = "rgba(255,255,255,0.48)";
-  ctx.font = "600 10px 'JetBrains Mono', monospace";
+  const serialFont = compact ? "600 8px 'JetBrains Mono', monospace" : "600 10px 'JetBrains Mono', monospace";
+  ctx.font = serialFont;
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
+  const serialText = `SERIAL ${summary.serialNumber}  •  MINTED ${formatUtcTimestamp(summary.capturedAt)}`;
+  const safeSerial = clampTextTail(ctx, serialText, cardW - sideInset * 2 - 8, serialFont);
   ctx.fillText(
-    `SERIAL ${summary.serialNumber}  •  MINTED ${formatUtcTimestamp(summary.capturedAt)}`,
+    safeSerial,
     cardX + cardW * 0.5,
     serialY,
   );
@@ -835,28 +1014,32 @@ function drawMetaChip(
   label: string,
   value: string,
   theme: RunCardTheme,
+  compact = false,
 ): void {
   const fill = ctx.createLinearGradient(x, y, x, y + h);
   fill.addColorStop(0, "rgba(255,255,255,0.06)");
   fill.addColorStop(1, "rgba(255,255,255,0.025)");
   ctx.fillStyle = fill;
-  roundRect(ctx, x, y, w, h, 14);
+  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
   ctx.fill();
 
   ctx.strokeStyle = withAlpha(theme.primary, 0.22);
   ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, h, 14);
+  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
   ctx.stroke();
 
   ctx.fillStyle = "rgba(255,255,255,0.42)";
-  ctx.font = "700 8px 'JetBrains Mono', monospace";
+  const labelFont = compact ? "700 7px 'JetBrains Mono', monospace" : "700 8px 'JetBrains Mono', monospace";
+  ctx.font = labelFont;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(label, x + 12, y + 9);
+  ctx.fillText(label, x + (compact ? 9 : 12), y + (compact ? 7 : 9));
 
   ctx.fillStyle = "#f9fbff";
-  ctx.font = "700 13px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.fillText(value, x + 12, y + 22);
+  const valueFont = compact ? "700 11px 'Space Grotesk', 'Segoe UI', sans-serif" : "700 13px 'Space Grotesk', 'Segoe UI', sans-serif";
+  ctx.font = valueFont;
+  const safeValue = clampTextTail(ctx, value, w - (compact ? 18 : 24), valueFont);
+  ctx.fillText(safeValue, x + (compact ? 9 : 12), y + (compact ? 18 : 22));
 }
 
 function drawGlyphBadge(
@@ -937,6 +1120,50 @@ function drawPaperGrain(
   roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 26);
   ctx.fill();
   ctx.restore();
+}
+
+function drawCardWatermark(
+  ctx: CanvasRenderingContext2D,
+  cardX: number,
+  cardY: number,
+  cardW: number,
+  cardH: number,
+): void {
+  const watermark = getCardWatermarkImage();
+  if (!watermark) {
+    return;
+  }
+
+  const maxWidth = cardW * 1.5;
+  const maxHeight = cardH * 1.5;
+  const scale = Math.min(maxWidth / watermark.naturalWidth, maxHeight / watermark.naturalHeight);
+  const drawW = watermark.naturalWidth * scale;
+  const drawH = watermark.naturalHeight * scale;
+  const drawX = cardX + (cardW - drawW) / 2;
+  const drawY = cardY + (cardH - drawH) / 2 + cardH * 0.02;
+
+  ctx.save();
+  roundRect(ctx, cardX + 2, cardY + 2, cardW - 4, cardH - 4, 26);
+  ctx.clip();
+  ctx.globalAlpha = 0.1;
+  ctx.drawImage(watermark, drawX, drawY, drawW, drawH);
+  ctx.restore();
+}
+
+function getCardWatermarkImage(): HTMLImageElement | null {
+  if (typeof Image === "undefined") {
+    return null;
+  }
+  if (!ritualWatermarkRequested) {
+    ritualWatermarkRequested = true;
+    const img = new Image();
+    img.src = RITUAL_WATERMARK_SRC;
+    ritualWatermarkImage = img;
+  }
+  if (!ritualWatermarkImage || !ritualWatermarkImage.complete || ritualWatermarkImage.naturalWidth <= 0) {
+    return null;
+  }
+  return ritualWatermarkImage;
 }
 
 function glyphForSkill(skill: RunCardSkill): string {
@@ -1074,4 +1301,46 @@ function withAlpha(hex: string, alpha: number): string {
   const g = Number.parseInt(normalized.slice(2, 4), 16);
   const b = Number.parseInt(normalized.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function fitTextWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxSize: number,
+  minSize: number,
+  weight: string,
+  family: string,
+): number {
+  let size = maxSize;
+  while (size > minSize) {
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) {
+      break;
+    }
+    size -= 1;
+  }
+  return size;
+}
+
+function clampTextTail(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  font: string,
+): string {
+  ctx.font = font;
+  if (ctx.measureText(text).width <= maxWidth) {
+    return text;
+  }
+  const ellipsis = "...";
+  let trimmed = text;
+  while (trimmed.length > 1 && ctx.measureText(`${trimmed}${ellipsis}`).width > maxWidth) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return `${trimmed}${ellipsis}`;
 }

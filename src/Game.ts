@@ -317,6 +317,21 @@ export class Game {
   }
 
   /**
+   * Dev helper: opens the Game Over overlay immediately without requiring a full run.
+   * Does not persist a leaderboard entry.
+   */
+  debugOpenGameOverOverlay(): void {
+    if (this.gameOverUi.isBannerOpen()) {
+      return;
+    }
+    const capturedAt = Date.now();
+    const previewScore = this.scoreSystem.getLiveScore(this.player.survivorLevel);
+    this.gameOverResolved = true;
+    this.gameOverUi.present(this.buildRunCardSummary(previewScore, capturedAt));
+    this.sound.play("gameOver");
+  }
+
+  /**
    * Tears down listeners and stops the RAF loop — call before hot-reload teardown.
    */
   dispose(): void {

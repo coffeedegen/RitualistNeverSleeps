@@ -6,6 +6,9 @@ import {
   type RunCardSummary,
 } from "./RunCardRenderer";
 
+const EXPORT_CARD_WIDTH_PX = 1200;
+const EXPORT_CARD_HEIGHT_PX = 1800; // 2:3 ratio
+
 interface ButtonRect {
   x: number;
   y: number;
@@ -18,6 +21,8 @@ export interface GameOverUICallbacks {
   onBackToMainMenu: () => void;
   onQuitConfirmed: () => void;
   onMintCard: (summary: RunCardSummary) => void;
+  isMintEnabled?: () => boolean;
+  getMintDisabledReason?: () => string | null;
 }
 
 type OverlayMode = "hidden" | "gameOver" | "confirmQuit";
@@ -48,29 +53,34 @@ export class GameOverUI {
     const mouseY = event.clientY;
 
     if (this.overlayMode === "gameOver") {
-      const cardButtons = this.getCardActions(width, height);
-      if (this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.mint)) {
+      const frame = this.summary !== null ? this.getAnimatedCardFrame(width, height) : null;
+      const cardButtons = frame ? this.getCardActions(width, height, frame) : null;
+      if (cardButtons && this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.mint)) {
         event.preventDefault();
+        if (!this.canMintCard()) {
+          window.alert(this.getMintDisabledReason());
+          return;
+        }
         this.markPressed("card-mint");
         this.callbacks.onMintCard(this.summary);
         return;
       }
 
-      if (this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.share)) {
+      if (cardButtons && this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.share)) {
         event.preventDefault();
         this.markPressed("card-share");
         void this.shareRunCard();
         return;
       }
 
-      if (this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.download)) {
+      if (cardButtons && this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.download)) {
         event.preventDefault();
         this.markPressed("card-download");
         void this.downloadRunCard();
         return;
       }
 
-      const buttons = this.getMainButtons(width, height);
+      const buttons = this.getMainButtons(width, height, frame);
       if (this.hitTest(mouseX, mouseY, buttons.start)) {
         event.preventDefault();
         this.markPressed("main-start");
@@ -116,6 +126,7 @@ export class GameOverUI {
   private avatarImage: HTMLImageElement | null = null;
 
   private avatarLoadSerial = 0;
+  private walletPanelHidden = false;
 
   constructor(private readonly callbacks: GameOverUICallbacks) {
     window.addEventListener("mousedown", this.clickListener, true);
@@ -130,6 +141,7 @@ export class GameOverUI {
     this.avatarImage = null;
     this.pressedButton = null;
     this.pressedUntilMs = 0;
+    this.setWalletPanelVisible(true);
   }
 
   present(summary: RunCardSummary): void {
@@ -140,6 +152,7 @@ export class GameOverUI {
     this.pressedButton = null;
     this.pressedUntilMs = 0;
     this.loadAvatar(summary);
+    this.setWalletPanelVisible(false);
   }
 
   isBannerOpen(): boolean {
@@ -150,6 +163,7 @@ export class GameOverUI {
     if (this.overlayMode === "hidden") {
       return;
     }
+    this.setWalletPanelVisible(false);
 
     ctx.save();
     const backdrop = ctx.createRadialGradient(
@@ -167,38 +181,73 @@ export class GameOverUI {
     ctx.fillRect(0, 0, width, height);
 
     this.drawBackdrop(ctx, width, height);
-    this.drawTitle(ctx, width, height);
 
     if (this.overlayMode === "confirmQuit") {
+      this.drawTitle(ctx, width, height, null);
       this.drawQuitConfirmation(ctx, width, height);
     } else {
       if (this.summary !== null) {
-        const frame = measureRunCard(width, height);
-        renderRunCard(ctx, this.summary, width, height, this.avatarImage, { mode: "screen" });
+        const frame = this.getAnimatedCardFrame(width, height);
+        this.drawTitle(ctx, width, height, frame);
+        this.renderAnimatedRunCard(ctx, frame, width, height);
         this.drawCardActions(ctx, frame, width, height);
+        this.drawMainButtons(ctx, width, height, frame);
+      } else {
+        this.drawTitle(ctx, width, height, null);
+        this.drawMainButtons(ctx, width, height, null);
       }
-      this.drawMainButtons(ctx, width, height);
     }
 
     ctx.restore();
   }
 
-  private drawTitle(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  private drawTitle(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    frame: { x: number; y: number; w: number; h: number } | null,
+  ): void {
     const compact = this.isCompactLayout(width, height);
-    ctx.fillStyle = "#ff6b7a";
-    ctx.font = `900 ${compact ? 46 : 68}px 'Cinzel', 'Times New Roman', serif`;
+    const titleY = frame
+      ? clamp(frame.y - (compact ? 84 : 92), compact ? 56 : 62, frame.y - (compact ? 38 : 44))
+      : height * (compact ? 0.16 : 0.145);
+    const subtitleY = titleY + (compact ? 24 : 30);
+    const titleMaxWidth = frame ? Math.min(width * 0.86, frame.w + 190) : width * 0.8;
+    const titleSize = fitHeadlineFont(
+      ctx,
+      "THE RITUAL ARCHIVE",
+      titleMaxWidth,
+      compact ? 40 : 58,
+      compact ? 27 : 36,
+      "900",
+      "'Cinzel', 'Times New Roman', serif",
+    );
+    const titleFill = ctx.createLinearGradient(0, titleY - 28, 0, titleY + 8);
+    titleFill.addColorStop(0, "rgba(255,231,236,0.95)");
+    titleFill.addColorStop(0.62, "rgba(236,143,161,0.92)");
+    titleFill.addColorStop(1, "rgba(197,94,118,0.9)");
+    ctx.fillStyle = titleFill;
+    ctx.shadowColor = "rgba(255, 118, 145, 0.24)";
+    ctx.shadowBlur = compact ? 7 : 10;
+    ctx.font = `900 ${titleSize}px 'Cinzel', 'Times New Roman', serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("THE RITUAL ARCHIVE", width * 0.5, height * (compact ? 0.17 : 0.16));
+    ctx.fillText("THE RITUAL ARCHIVE", width * 0.5, titleY);
+    ctx.shadowBlur = 0;
 
-    ctx.fillStyle = "rgba(255,255,255,0.4)";
-    ctx.font = `600 ${compact ? 10 : 12}px 'JetBrains Mono', monospace`;
-    ctx.fillText("MINT-READY RUN CARD", width * 0.5, height * (compact ? 0.23 : 0.21));
+    ctx.fillStyle = "rgba(255,255,255,0.46)";
+    ctx.font = `600 ${compact ? 10 : 11}px 'JetBrains Mono', monospace`;
+    ctx.fillText("MINT-READY RUN CARD", width * 0.5, subtitleY);
   }
 
-  private drawMainButtons(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  private drawMainButtons(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    frame: { x: number; y: number; w: number; h: number } | null,
+  ): void {
     const compact = this.isCompactLayout(width, height);
-    const layout = this.getMainButtons(width, height);
+    const layout = this.getMainButtons(width, height, frame);
     const accentFont = compact ? 14 : 16;
 
     this.drawButton(ctx, layout.start, "Start a New Game", "#41d37c", accentFont, true, this.isPressed("main-start"));
@@ -213,19 +262,41 @@ export class GameOverUI {
     height: number,
   ): void {
     const compact = this.isCompactLayout(width, height);
-    const buttonH = compact ? 34 : 38;
-    const buttonW = compact ? Math.min(230, frame.w * 0.34) : 200;
-    const gap = compact ? 12 : 16;
-    const rowY = frame.y - (compact ? 50 : 56);
-    const totalW = buttonW * 3 + gap * 2;
-    const startX = width * 0.5 - totalW / 2;
-    const mint = { x: startX, y: rowY, w: buttonW, h: buttonH };
-    const share = { x: mint.x + buttonW + gap, y: rowY, w: buttonW, h: buttonH };
-    const download = { x: share.x + buttonW + gap, y: rowY, w: buttonW, h: buttonH };
+    const { mint, share, download } = this.getCardActions(width, height, frame);
+    const mintEnabled = this.canMintCard();
 
-    this.drawButton(ctx, mint, "Mint this Card", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-mint"));
+    this.drawButton(
+      ctx,
+      mint,
+      mintEnabled ? "Mint this Card" : "Mint Unavailable",
+      "#41d37c",
+      compact ? 13 : 14,
+      true,
+      this.isPressed("card-mint"),
+      !mintEnabled,
+    );
     this.drawButton(ctx, share, "Share to X", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-share"));
     this.drawButton(ctx, download, "Download Card", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-download"));
+
+    if (!mintEnabled) {
+      const reason = this.callbacks.getMintDisabledReason?.();
+      if (reason) {
+        const hintMaxWidth = mint.w * 2 + 14;
+        ctx.fillStyle = "rgba(245, 174, 126, 0.92)";
+        ctx.font = `600 ${compact ? 10 : 11}px 'JetBrains Mono', monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const hintY = Math.min(frame.y - 8, mint.y + mint.h + (compact ? 8 : 10));
+        wrapAndFillText(
+          ctx,
+          `Mint disabled: ${reason}`,
+          width * 0.5,
+          hintY,
+          hintMaxWidth,
+          compact ? 12 : 13,
+        );
+      }
+    }
   }
 
   private drawQuitConfirmation(
@@ -278,36 +349,46 @@ export class GameOverUI {
     fontSize: number,
     highlight = false,
     pressed = false,
+    disabled = false,
   ): void {
-    const pressOffset = pressed ? 2 : 0;
+    const pressOffset = pressed && !disabled ? 2 : 0;
     const drawX = rect.x;
     const drawY = rect.y + pressOffset;
     const drawH = Math.max(10, rect.h - pressOffset);
 
     const fillGradient = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    fillGradient.addColorStop(0, pressed ? "rgba(18, 26, 20, 0.98)" : "rgba(22, 28, 46, 0.98)");
-    fillGradient.addColorStop(1, pressed ? "rgba(5, 14, 9, 0.98)" : "rgba(7, 9, 15, 0.98)");
+    if (disabled) {
+      fillGradient.addColorStop(0, "rgba(28, 31, 41, 0.96)");
+      fillGradient.addColorStop(1, "rgba(16, 18, 26, 0.95)");
+    } else {
+      fillGradient.addColorStop(0, pressed ? "rgba(18, 26, 20, 0.98)" : "rgba(22, 28, 46, 0.98)");
+      fillGradient.addColorStop(1, pressed ? "rgba(5, 14, 9, 0.98)" : "rgba(7, 9, 15, 0.98)");
+    }
     ctx.fillStyle = fillGradient;
     this.roundPane(ctx, drawX, drawY, rect.w, drawH, 8);
     ctx.fill();
 
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = pressed ? 2 : (highlight ? 4 : 3);
+    ctx.strokeStyle = disabled ? "rgba(138, 146, 166, 0.55)" : accent;
+    ctx.lineWidth = disabled ? 2 : (pressed ? 2 : (highlight ? 4 : 3));
     this.roundPane(ctx, drawX, drawY, rect.w, drawH, 8);
     ctx.stroke();
 
-    ctx.fillStyle = this.withAlpha(accent, pressed ? 0.26 : 0.14);
+    ctx.fillStyle = disabled ? "rgba(160, 174, 192, 0.08)" : this.withAlpha(accent, pressed ? 0.26 : 0.14);
     this.roundPane(ctx, drawX + 4, drawY + 4, rect.w - 8, drawH - 8, 6);
     ctx.fill();
 
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = disabled ? "rgba(204, 213, 225, 0.8)" : "#ffffff";
     ctx.font = `700 ${fontSize}px 'Space Grotesk', ui-sans-serif, system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, drawX + rect.w / 2, drawY + drawH / 2 + (pressed ? 0.5 : 0));
+    ctx.fillText(text, drawX + rect.w / 2, drawY + drawH / 2 + (pressed && !disabled ? 0.5 : 0));
   }
 
-  private getMainButtons(width: number, height: number): {
+  private getMainButtons(
+    width: number,
+    height: number,
+    frame: { x: number; y: number; w: number; h: number } | null,
+  ): {
     start: ButtonRect;
     menu: ButtonRect;
     quit: ButtonRect;
@@ -319,7 +400,8 @@ export class GameOverUI {
       const gapY = 10;
       const totalW = buttonW * 2 + gapX;
       const x = width * 0.5 - totalW / 2;
-      const topY = Math.min(Math.max(height * 0.925, 24), height - buttonH * 2 - gapY - 10);
+      const preferredY = frame ? frame.y + frame.h + 28 : height * 0.925;
+      const topY = Math.min(Math.max(preferredY, 24), height - buttonH * 2 - gapY - 10);
       return {
         start: { x, y: topY, w: buttonW, h: buttonH },
         menu: { x: x + buttonW + gapX, y: topY, w: buttonW, h: buttonH },
@@ -332,7 +414,8 @@ export class GameOverUI {
     const gap = Math.max(20, Math.min(30, width * 0.03));
     const totalW = buttonW * 3 + gap * 2;
     const x = width * 0.5 - totalW / 2;
-    const y = Math.min(Math.max(height * 0.88, 24), height - buttonH - 14);
+    const preferredY = frame ? frame.y + frame.h + 34 : height * 0.88;
+    const y = Math.min(Math.max(preferredY, 24), height - buttonH - 14);
 
     return {
       start: { x, y, w: buttonW, h: buttonH },
@@ -341,17 +424,22 @@ export class GameOverUI {
     };
   }
 
-  private getCardActions(width: number, height: number): {
+  private getCardActions(
+    width: number,
+    height: number,
+    frame: { x: number; y: number; w: number; h: number },
+  ): {
     mint: ButtonRect;
     share: ButtonRect;
     download: ButtonRect;
   } {
     const compact = this.isCompactLayout(width, height);
-    const frame = measureRunCard(width, height);
     const buttonH = compact ? 34 : 38;
-    const buttonW = compact ? Math.min(230, frame.w * 0.34) : 200;
-    const gap = compact ? 12 : 16;
-    const rowY = frame.y - (compact ? 50 : 56);
+    const buttonW = compact
+      ? Math.min(214, Math.max(150, frame.w * 0.292))
+      : Math.min(220, Math.max(172, frame.w * 0.228));
+    const gap = compact ? 10 : 14;
+    const rowY = Math.max(12, frame.y - (compact ? 46 : 50));
     const totalW = buttonW * 3 + gap * 2;
     const startX = width * 0.5 - totalW / 2;
     return {
@@ -396,6 +484,47 @@ export class GameOverUI {
     return width < 860 || height < 680;
   }
 
+  private getAnimatedCardFrame(width: number, height: number): { x: number; y: number; w: number; h: number } {
+    const base = measureRunCard(width, height);
+    const t = performance.now() / 1000;
+    const bobX = Math.sin(t * 0.9) * 3;
+    const bobY = Math.sin(t * 1.6) * 6;
+    const minX = 12;
+    const maxX = Math.max(minX, width - base.w - 12);
+    const topSpace = this.isCompactLayout(width, height) ? 118 : 130;
+    const bottomSpace = this.isCompactLayout(width, height) ? 104 : 92;
+    const minY = topSpace;
+    const maxY = height - bottomSpace - base.h;
+    const unclampedY = base.y + bobY;
+    const y = maxY >= minY
+      ? clamp(unclampedY, minY, maxY)
+      : clamp(unclampedY, 12, Math.max(12, height - base.h - 12));
+    return {
+      x: Math.floor(clamp(base.x + bobX, minX, maxX)),
+      y: Math.floor(y),
+      w: base.w,
+      h: base.h,
+    };
+  }
+
+  private renderAnimatedRunCard(
+    ctx: CanvasRenderingContext2D,
+    frame: { x: number; y: number; w: number; h: number },
+    width: number,
+    height: number,
+  ): void {
+    if (!this.summary) {
+      return;
+    }
+    ctx.save();
+    const base = measureRunCard(width, height);
+    const dx = frame.x - base.x;
+    const dy = frame.y - base.y;
+    ctx.translate(dx, dy);
+    renderRunCard(ctx, this.summary, width, height, this.avatarImage, { mode: "screen" });
+    ctx.restore();
+  }
+
   private markPressed(buttonId: string): void {
     this.pressedButton = buttonId;
     this.pressedUntilMs = performance.now() + 120;
@@ -403,6 +532,18 @@ export class GameOverUI {
 
   private isPressed(buttonId: string): boolean {
     return this.pressedButton === buttonId && performance.now() <= this.pressedUntilMs;
+  }
+
+  private setWalletPanelVisible(visible: boolean): void {
+    if (this.walletPanelHidden === !visible) {
+      return;
+    }
+    const panel = document.getElementById("wallet-info-header");
+    if (panel) {
+      panel.style.visibility = visible ? "visible" : "hidden";
+      panel.style.pointerEvents = visible ? "auto" : "none";
+    }
+    this.walletPanelHidden = !visible;
   }
 
   private drawBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number): void {
@@ -485,8 +626,8 @@ export class GameOverUI {
     }
 
     const exportCanvas = document.createElement("canvas");
-    exportCanvas.width = 1600;
-    exportCanvas.height = 2000;
+    exportCanvas.width = EXPORT_CARD_WIDTH_PX;
+    exportCanvas.height = EXPORT_CARD_HEIGHT_PX;
     const exportCtx = exportCanvas.getContext("2d");
     if (!exportCtx) {
       throw new Error("Canvas export context unavailable.");
@@ -567,6 +708,15 @@ export class GameOverUI {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
+  private canMintCard(): boolean {
+    return this.callbacks.isMintEnabled?.() ?? true;
+  }
+
+  private getMintDisabledReason(): string {
+    return this.callbacks.getMintDisabledReason?.()
+      ?? "Mint is currently unavailable due to invalid app configuration.";
+  }
+
   private hitTest(x: number, y: number, rect: ButtonRect): boolean {
     return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
@@ -623,4 +773,28 @@ function wrapAndFillText(
       ctx.fillText(line, centerX, startY + idx * lineHeight);
     }
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function fitHeadlineFont(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxSize: number,
+  minSize: number,
+  weight: string,
+  family: string,
+): number {
+  let size = maxSize;
+  while (size > minSize) {
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) {
+      break;
+    }
+    size -= 1;
+  }
+  return size;
 }

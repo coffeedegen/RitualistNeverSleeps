@@ -33,18 +33,20 @@ export class HudRenderer {
   draw(
     ctx: CanvasRenderingContext2D,
     viewportWidth: number,
-    _viewportHeight: number,
+    viewportHeight: number,
     snapshot: HudPresentationState,
   ): void {
     this.hpKickRemainMs = Math.max(0, this.hpKickRemainMs - 16);
     const scoreValue = snapshot.score ?? 0;
     const tier = getScoreTitle(scoreValue);
     const palette = getHudTierPalette(tier.title);
-    const compact = viewportWidth < 900;
-    const marginX = compact ? 14 : 18;
-    const panelY = compact ? 14 : 18;
+    const compact = viewportWidth < 980 || viewportHeight < 700;
+    const safeInsetX = clampNumber(Math.floor(viewportWidth * 0.022), 12, 28);
+    const safeInsetTop = clampNumber(Math.floor(viewportHeight * 0.02), 10, 24);
+    const marginX = compact ? safeInsetX : safeInsetX + 2;
+    const panelY = safeInsetTop;
     const gap = compact ? 10 : 14;
-    const panelH = compact ? 84 : 92;
+    const panelH = compact ? 86 : 94;
     const totalW = viewportWidth - marginX * 2;
 
     let leftPanelW = compact ? 198 : 232;
@@ -62,6 +64,14 @@ export class HudRenderer {
     const rightX = centerX + centerW + gap;
 
     ctx.save();
+    this.drawTopStripBackdrop(
+      ctx,
+      marginX - 8,
+      panelY - 8,
+      viewportWidth - marginX * 2 + 16,
+      panelH + 16,
+      palette,
+    );
 
     this.drawInfoPanel(
       ctx,
@@ -123,6 +133,13 @@ export class HudRenderer {
     ctx.lineWidth = 1;
     this.roundRect(ctx, x + 1, y + 1, w - 2, h - 2, 13);
     ctx.stroke();
+
+    ctx.strokeStyle = "rgba(186, 212, 255, 0.16)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 12, y + h - 16);
+    ctx.lineTo(x + w - 12, y + h - 16);
+    ctx.stroke();
   }
 
   /** Renders the center XP panel for the 3-strip HUD layout. */
@@ -141,7 +158,7 @@ export class HudRenderer {
     const ratio = Math.max(0, Math.min(1, ratioRaw));
 
     const barX = x + 14;
-    const barY = y + Math.floor(height * 0.44);
+    const barY = y + Math.floor(height * 0.48);
     const barW = width - 28;
     const barH = compactBarHeight(width);
 
@@ -150,14 +167,15 @@ export class HudRenderer {
     gradient.addColorStop(0.5, "#7b8cff");
     gradient.addColorStop(1, "#b97cff");
 
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.font = "700 10px 'JetBrains Mono', monospace";
+    ctx.fillStyle = "rgba(220,233,255,0.95)";
+    ctx.font = "700 9px 'JetBrains Mono', monospace";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText("XP TRACK", barX, y + 12);
 
     ctx.textAlign = "right";
-    ctx.fillStyle = "rgba(219,228,255,0.9)";
+    ctx.fillStyle = "rgba(214,224,246,0.84)";
+    ctx.font = "700 9px 'JetBrains Mono', monospace";
     ctx.fillText(`${Math.floor(xpValue)} / ${Math.floor(xpBudget)}`, x + width - 14, y + 12);
 
     ctx.fillStyle = "rgba(8,12,25,0.95)";
@@ -207,14 +225,14 @@ export class HudRenderer {
     this.drawPanelFrame(ctx, x, y, w, h, palette.glow);
 
     ctx.fillStyle = "#f7f2de";
-    ctx.font = "800 22px 'Space Grotesk', sans-serif";
+    ctx.font = "800 23px 'Space Grotesk', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`${level}`, x + 32, y + 27);
+    ctx.fillText(`${level}`, x + 32, y + 28);
 
-    ctx.fillStyle = "rgba(247, 242, 222, 0.55)";
+    ctx.fillStyle = "rgba(247, 242, 222, 0.62)";
     ctx.font = "700 9px 'JetBrains Mono', monospace";
-    ctx.fillText("LEVEL", x + 32, y + 44);
+    ctx.fillText("LEVEL", x + 32, y + 46);
 
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
     ctx.lineWidth = 1;
@@ -222,15 +240,22 @@ export class HudRenderer {
     ctx.stroke();
 
     ctx.fillStyle = "#f8f6ff";
-    ctx.font = "700 13px 'Space Grotesk', sans-serif";
+    ctx.font = "700 12px 'Space Grotesk', sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("Run Clock", x + 70, y + 14);
+    ctx.fillText("Run Clock", x + 70, y + 13);
 
-    ctx.fillStyle = "rgba(219, 228, 255, 0.86)";
+    ctx.fillStyle = "rgba(219, 228, 255, 0.9)";
     ctx.font = "600 12px 'JetBrains Mono', monospace";
-    ctx.fillText(formatClock(elapsedMs), x + 70, y + 34);
+    ctx.fillText(formatClock(elapsedMs), x + 70, y + 33);
 
-    this.drawHpBar(ctx, x + 68, y + 52, w - 84, 13, hpValue, hpMax);
+    this.drawHpBar(ctx, x + 68, y + 56, w - 84, 13, hpValue, hpMax);
+
+    const kick = Math.min(1, this.hpKickRemainMs / 180);
+    if (kick > 0) {
+      ctx.fillStyle = `rgba(255, 94, 117, ${0.12 * kick})`;
+      this.roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 13);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -293,7 +318,7 @@ export class HudRenderer {
     this.drawPanelFrame(ctx, x, y, w, h, palette.glow);
 
     ctx.fillStyle = "#f8f6ff";
-    ctx.font = "700 13px 'Space Grotesk', sans-serif";
+    ctx.font = "700 12px 'Space Grotesk', sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText("Score", x + 14, y + 10);
@@ -303,19 +328,19 @@ export class HudRenderer {
       ctx,
       scoreText,
       w - 28,
-      Math.max(16, Math.min(20, Math.floor(w * 0.085))),
-      12,
+      Math.max(17, Math.min(24, Math.floor(w * 0.098))),
+      13,
       "800",
       "'JetBrains Mono', monospace",
     );
     ctx.fillStyle = palette.accent;
     ctx.font = `800 ${scoreFont}px 'JetBrains Mono', monospace`;
-    ctx.fillText(scoreText, x + 14, y + 28);
+    ctx.fillText(scoreText, x + 14, y + 29);
 
     const tierX = x + 12;
-    const tierY = y + 44;
+    const tierY = y + 54;
     const tierW = w - 24;
-    const tierH = h - 50;
+    const tierH = h - 62;
     ctx.fillStyle = palette.chipFill;
     this.roundRect(ctx, tierX, tierY, tierW, tierH, 10);
     ctx.fill();
@@ -326,22 +351,49 @@ export class HudRenderer {
 
     ctx.fillStyle = palette.accent;
     ctx.font = "700 8px 'JetBrains Mono', monospace";
-    ctx.fillText("TITLE TIER", tierX + 10, tierY + 8);
+    ctx.fillText("TITLE", tierX + 10, tierY + 7);
 
     const tierLabel = tierTitle.toUpperCase();
     const tierFont = fitFontPx(
       ctx,
       tierLabel,
       tierW - 20,
-      Math.max(12, Math.min(16, Math.floor(tierW * 0.085))),
-      10,
+      Math.max(11, Math.min(14, Math.floor(tierW * 0.078))),
+      9,
       "900",
       "'Space Grotesk', sans-serif",
     );
     ctx.fillStyle = "#ffffff";
     ctx.font = `900 ${tierFont}px 'Space Grotesk', sans-serif`;
-    ctx.fillText(tierLabel, tierX + 10, tierY + 20);
+    ctx.textBaseline = "middle";
+    ctx.fillText(tierLabel, tierX + 10, tierY + tierH - 9);
     ctx.restore();
+  }
+
+  private drawTopStripBackdrop(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    palette: HudTierPalette,
+  ): void {
+    const gradient = ctx.createLinearGradient(x, y, x, y + h);
+    gradient.addColorStop(0, "rgba(6, 10, 20, 0.52)");
+    gradient.addColorStop(1, "rgba(4, 7, 15, 0.38)");
+    ctx.fillStyle = gradient;
+    this.roundRect(ctx, x, y, w, h, 18);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, x, y, w, h, 18);
+    ctx.stroke();
+
+    ctx.strokeStyle = palette.glow;
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, x + 1, y + 1, w - 2, h - 2, 17);
+    ctx.stroke();
   }
 
   private roundRect(
@@ -446,4 +498,8 @@ function formatClock(elapsedMs: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${pad2(seconds)}`;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

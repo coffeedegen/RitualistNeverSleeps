@@ -28,7 +28,10 @@ let walletConnectModal: WalletConnectUI | null = null;
 let currentWallet: Web3WalletData | null = null;
 let web3Manager: Web3Manager | null = null;
 let mintInFlight = false;
+let mintPreflightIssue: string | null = null;
 const MINT_WALLET_APPROVAL_TIMEOUT_MS = 20_000;
+const DEBUG_BYPASS_TO_GAME_OVER = import.meta.env.DEV
+  && new URLSearchParams(window.location.search).get("debug") === "gameover";
 
 // Web3 wallet configuration
 const WALLET_STORAGE_KEY = "ritual_wallet_data";
@@ -138,6 +141,12 @@ function updateUIWithWalletInfo(): void {
         ? "Sepolia"
         : `Chain ${currentWallet!.chainId}`
     : "Connect MetaMask to enter";
+  const mintReady = mintPreflightIssue === null;
+  const mintStatusLabel = mintReady ? "Mint ready" : "Mint unavailable";
+  const mintStatusColor = mintReady ? "#7fe0a8" : "#f5ae7e";
+  const mintStatusDetail = mintReady
+    ? "Config OK"
+    : mintPreflightIssue ?? "Invalid mint configuration";
 
   headerDiv.innerHTML = `
     <div style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
@@ -161,6 +170,12 @@ function updateUIWithWalletInfo(): void {
           </div>
           <div style="color: ${isConnected ? "#7fe0a8" : "rgba(160,174,192,0.7)"}; font-size: 11px;">
             ${chainName}
+          </div>
+          <div style="margin-top: 5px; color: ${mintStatusColor}; font-size: 11px; line-height: 1.25;">
+            ${mintStatusLabel}
+          </div>
+          <div style="color: rgba(160,174,192,0.8); font-size: 10px; line-height: 1.25; white-space: normal; max-width: 170px;">
+            ${mintStatusDetail}
           </div>
         </div>
       </div>
@@ -252,6 +267,11 @@ function mountHomepage(): void {
   game?.dispose();
   game = null;
 
+  if (DEBUG_BYPASS_TO_GAME_OVER) {
+    mountGame();
+    return;
+  }
+
   // Check if wallet is connected before showing homepage
   if (!currentWallet) {
     connectWallet();
@@ -287,6 +307,11 @@ function mountGame(): void {
       requestQuit();
     },
     onMintCard: (summary) => {
+      if (mintPreflightIssue) {
+        window.alert(`Mint is unavailable: ${mintPreflightIssue}`);
+        return;
+      }
+
       if (mintInFlight) {
         window.alert("Mint request is already in progress.");
         return;
@@ -326,8 +351,13 @@ function mountGame(): void {
           mintInFlight = false;
         });
     },
+    isMintEnabled: () => mintPreflightIssue === null,
+    getMintDisabledReason: () => mintPreflightIssue,
   });
   game.start();
+  if (DEBUG_BYPASS_TO_GAME_OVER) {
+    game.debugOpenGameOverOverlay();
+  }
   Debug.log("game started");
 }
 
@@ -353,9 +383,9 @@ function requestQuit(): void {
 // Show homepage first. Game starts only after "Initiate Ritual" is clicked.
 async function bootstrap(): Promise<void> {
   initializeWeb3();
-  const mintIssue = getMintPreflightIssue();
-  if (mintIssue) {
-    console.warn("[mint-preflight]", mintIssue);
+  mintPreflightIssue = getMintPreflightIssue();
+  if (mintPreflightIssue) {
+    console.warn("[mint-preflight]", mintPreflightIssue);
   }
   await restoreWalletConnection();
   mountHomepage();
