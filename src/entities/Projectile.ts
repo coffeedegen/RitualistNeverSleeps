@@ -25,6 +25,8 @@ export class Projectile extends Entity {
   /** Optional debug tint index for projectile rendering palettes. */
   visualTintSeed = 0;
 
+  sourceWeaponId: string | undefined = undefined;
+
   /** Configures kinematics for the duration of one salvo lifecycle. */
   initializeMotion(payload: ProjectileMotionBlueprint): void {
     this.x = payload.worldX;
@@ -38,6 +40,7 @@ export class Projectile extends Entity {
     this.strikeQuotaRemaining = Math.max(1, Math.round(payload.hitQuota ?? 1));
     this.lastVictimPoolSlot = -1;
     this.visualTintSeed = payload.visualTintSeed ?? 0;
+    this.sourceWeaponId = payload.sourceWeaponId;
     this.hp = this.damageRoll;
     this.maxHp = this.damageRoll;
     this.active = true;
@@ -74,6 +77,7 @@ export class Projectile extends Entity {
     this.strikeQuotaRemaining = 1;
     this.lastVictimPoolSlot = -1;
     this.visualTintSeed = 0;
+    this.sourceWeaponId = undefined;
   }
 }
 
@@ -89,4 +93,5 @@ export interface ProjectileMotionBlueprint {
   /** Total enemies allowed to affect before projectile retires (`1` = default single strike). */
   hitQuota?: number;
   visualTintSeed?: number;
+  sourceWeaponId?: string;
 }

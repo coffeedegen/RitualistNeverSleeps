@@ -13,50 +13,49 @@ export function openSettingsModal(): HTMLDivElement {
   const backdrop = document.createElement("div");
   backdrop.className = "hp-modal-backdrop";
   backdrop.innerHTML = `
-      <div class="hp-modal">
-        <button class="hp-modal-close" id="hp-settings-close">✕</button>
-        <div class="hp-modal-title">⚙ SETTINGS</div>
-        <div class="hp-setting-row">
-          <label class="hp-setting-label">
-            <span>Master Volume</span>
-            <span id="hp-lbl-master">80%</span>
-          </label>
-          <input class="hp-slider" type="range" min="0" max="100" value="80" id="hp-slider-master" />
+      <div class="hp-modal hp-modal-wide">
+        <div class="hp-modal-header">
+          <div>
+            <p class="hp-modal-eyebrow">Control Deck</p>
+            <h2 class="hp-modal-title">Settings</h2>
+          </div>
+          <button class="hp-modal-close" id="hp-settings-close" aria-label="Close settings">✕</button>
         </div>
-        <div class="hp-setting-row">
-          <label class="hp-setting-label">
-            <span>SFX</span>
-            <span id="hp-lbl-sfx">70%</span>
-          </label>
-          <input class="hp-slider" type="range" min="0" max="100" value="70" id="hp-slider-sfx" />
+
+        <div class="hp-settings-grid">
+          <div class="hp-setting-row">
+            <label class="hp-setting-label">
+              <span>Master Volume</span>
+              <span id="hp-lbl-master">80%</span>
+            </label>
+            <input class="hp-slider" type="range" min="0" max="100" value="80" id="hp-slider-master" />
+          </div>
+          <div class="hp-setting-row">
+            <label class="hp-setting-label">
+              <span>SFX</span>
+              <span id="hp-lbl-sfx">70%</span>
+            </label>
+            <input class="hp-slider" type="range" min="0" max="100" value="70" id="hp-slider-sfx" />
+          </div>
+          <div class="hp-setting-row">
+            <label class="hp-setting-label">
+              <span>Music</span>
+              <span id="hp-lbl-music">60%</span>
+            </label>
+            <input class="hp-slider" type="range" min="0" max="100" value="60" id="hp-slider-music" />
+          </div>
         </div>
-        <div class="hp-setting-row">
-          <label class="hp-setting-label">
-            <span>Music</span>
-            <span id="hp-lbl-music">60%</span>
-          </label>
-          <input class="hp-slider" type="range" min="0" max="100" value="60" id="hp-slider-music" />
-        </div>
-        <div class="hp-setting-row">
+
+        <div class="hp-setting-row hp-setting-row-field">
           <label class="hp-setting-label" for="hp-input-xhandle">
             <span>X Handle</span>
-            <span style="font-size:11px;color:rgba(255,255,255,0.4)">for profile card</span>
+            <span class="hp-setting-help">Used on run card</span>
           </label>
           <input
             id="hp-input-xhandle"
             type="text"
             placeholder="@yourhandle"
-            style="
-              width: 100%;
-              padding: 12px 14px;
-              border-radius: 12px;
-              border: 1px solid rgba(127,224,168,0.18);
-              background: rgba(4, 8, 14, 0.88);
-              color: #f7f2de;
-              font-size: 14px;
-              font-family: 'JetBrains Mono', monospace;
-              outline: none;
-            "
+            class="hp-field-input"
           />
         </div>
       </div>
@@ -125,23 +124,31 @@ export function openLeaderboardModal(): HTMLDivElement {
   const backdrop = document.createElement("div");
   backdrop.className = "hp-modal-backdrop";
   backdrop.innerHTML = `
-      <div class="hp-modal" style="max-width:560px">
-        <button class="hp-modal-close" id="hp-lb-close">✕</button>
-        <div class="hp-modal-title">🏆 LEADERBOARD</div>
-        <table class="hp-lb-table" style="font-size:13px">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Wallet</th>
-              <th style="text-align:center">Kills</th>
-              <th style="text-align:center">Time</th>
-              <th style="text-align:right">Score</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <p style="font-size:11px;color:rgba(255,255,255,0.25);text-align:center;margin-top:16px">
-          Scores are saved locally. On-chain sync coming soon.
+      <div class="hp-modal hp-modal-board">
+        <div class="hp-modal-header">
+          <div>
+            <p class="hp-modal-eyebrow">Run Intelligence</p>
+            <h2 class="hp-modal-title">Leaderboard</h2>
+          </div>
+          <button class="hp-modal-close" id="hp-lb-close" aria-label="Close leaderboard">✕</button>
+        </div>
+
+        <div class="hp-lb-shell">
+          <table class="hp-lb-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Wallet</th>
+                <th style="text-align:center">Kills</th>
+                <th style="text-align:center">Time</th>
+                <th style="text-align:right">Score</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <p class="hp-lb-footnote">
+          Scores are currently stored locally. On-chain leaderboard sync is next.
         </p>
       </div>
     `;

@@ -283,7 +283,11 @@ export class Web3Manager {
 
     try {
       const ethereum = (window as any).ethereum;
-      const chainIdHex = toBeHex(chainId);
+      if (!Number.isInteger(chainId) || chainId <= 0) {
+        throw new Error(`Invalid chainId: ${chainId}`);
+      }
+      // MetaMask expects an unpadded lowercase hex value (e.g. 0x7bb for 1979).
+      const chainIdHex = `0x${chainId.toString(16)}`;
 
       await ethereum.request({
         method: "wallet_switchEthereumChain",

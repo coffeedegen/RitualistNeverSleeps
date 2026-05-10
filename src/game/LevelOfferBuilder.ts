@@ -14,6 +14,7 @@ import {
   type MergedWeaponStats,
   type WeaponData,
 } from "../data/weapons";
+import { getAvailableWeaponEvolutions } from "../data/weaponEvolutions";
 import {
   MAX_PASSIVE_SLOTS,
   MAX_WEAPON_SLOTS,
@@ -114,6 +115,7 @@ export class LevelOfferBuilder {
           accent: this.survivorAccentFromSeed(`wUpgrade:${lane.id}`),
           title: `Upgrade ${data.name}`,
           effect: describeWeaponLoopEffect(data),
+          iconSpriteId: resolveWeaponOfferIcon(data.id),
           details: [
             `Level ${lane.level}/${data.maxLevel} -> ${lane.level + 1}/${data.maxLevel}`,
             formatWeaponDelta(current, next),
@@ -129,28 +131,27 @@ export class LevelOfferBuilder {
     };
 
     const pushEvolutionCards = (): void => {
-      for (const lane of p.weaponLanes) {
-        const base = requireWeapon(lane.id);
-        if (
-          base.evolutionId === undefined ||
-          base.passiveRequirement === undefined ||
-          lane.level < base.maxLevel
-        ) {
-          continue;
-        }
+      const readyEvolutions = getAvailableWeaponEvolutions({
+        weapons: p.weaponLanes,
+        passives: p.passiveLanes,
+      });
 
-        if (!p.passiveMeetsRequirement(base.passiveRequirement, 1)) {
-          continue;
-        }
+      for (const candidate of readyEvolutions) {
+        const base = requireWeapon(candidate.rule.baseWeaponId);
+        const evolved = requireWeapon(candidate.rule.evolvedWeaponId);
+        const catalystLabel =
+          candidate.rule.catalystPassiveIds.length > 0
+            ? candidate.rule.catalystPassiveIds.join(" + ")
+            : "No catalyst required";
 
-        const evolved = requireWeapon(base.evolutionId);
         pushCandidate("evolution", {
           accent: "#ff9f43",
           title: `Evolve - ${evolved.name}`,
           effect: `${base.name} evolves into ${evolved.name}`,
-          details: `Need ${base.passiveRequirement} and max level ${base.maxLevel}.`,
+          iconSpriteId: resolveWeaponOfferIcon(evolved.id),
+          details: `Need max level ${base.maxLevel}. Catalyst: ${catalystLabel}.`,
           applySelection: () => {
-            this.deps.weaponAccess.evolveWeaponLane(base.id);
+            this.deps.weaponAccess.evolveWeaponLane(candidate.rule.baseWeaponId);
             this.deps.refreshDerivedStats();
           },
         });
@@ -171,6 +172,7 @@ export class LevelOfferBuilder {
           accent: this.survivorAccentFromSeed(`weaponNew:${id}`),
           title: `Take ${data.name}`,
           effect: describeWeaponLoopEffect(data),
+          iconSpriteId: resolveWeaponOfferIcon(data.id),
           details: `Starts at level 1. ${describeWeaponBaseStats(data, combatTotals)}.`,
           applySelection: () => {
             this.deps.weaponAccess.acquireWeaponLane(id);
@@ -196,6 +198,7 @@ export class LevelOfferBuilder {
           accent: this.survivorAccentFromSeed(`passive:${passiveId}`),
           title: `Take ${meta.name}`,
           effect: `Adds ${meta.name} to your passive slots`,
+          iconSpriteId: resolvePassiveOfferIcon(passiveId),
           details: describePassiveDelta(meta.levelBonuses[0], meta.maxLevel),
           applySelection: () => {
             p.grantPassiveOrLevel(passiveId);
@@ -217,6 +220,7 @@ export class LevelOfferBuilder {
           accent: this.survivorAccentFromSeed(`rank:${lane.id}:${lane.level}`),
           title: `Rank Up ${meta.name}`,
           effect: `${meta.name} gains one rank`,
+          iconSpriteId: resolvePassiveOfferIcon(lane.id),
           details: [
             `Current level ${lane.level}/${meta.maxLevel}`,
             describePassiveDelta(nextBonus, meta.maxLevel),
@@ -236,6 +240,7 @@ export class LevelOfferBuilder {
         accent: "#7fe0a8",
         title: "Hearty Feast",
         effect: "Raise max HP and heal now",
+        iconSpriteId: "hud_hp",
         details: "+15 max HP bonus. Heal 15 now.",
         applySelection: () => {
           this.deps.player.manualMaxHpBonus += 15;
@@ -251,6 +256,7 @@ export class LevelOfferBuilder {
         accent: "#ffd478",
         title: "Attractive Aura",
         effect: "Increase pickup magnet range",
+        iconSpriteId: "graviton_seed",
         details: "+20 magnet range.",
         applySelection: () => {
           this.deps.player.manualMagnetBonus += 20;
@@ -262,6 +268,7 @@ export class LevelOfferBuilder {
         accent: "#c892ff",
         title: "Fortune Surge",
         effect: "Increase luck",
+        iconSpriteId: "fortune_leaf",
         details: "+0.2 luck.",
         applySelection: () => {
           this.deps.player.manualLuckBonus += 0.2;
@@ -273,6 +280,7 @@ export class LevelOfferBuilder {
         accent: "#f5f5f5",
         title: "Swift Stride",
         effect: "Increase move speed",
+        iconSpriteId: "gale_wings",
         details: "+18 flat move speed.",
         applySelection: () => {
           this.deps.player.manualMoveBonus += 18;
@@ -284,6 +292,7 @@ export class LevelOfferBuilder {
         accent: "#6bcffb",
         title: "Scholar's Margin",
         effect: "Increase growth",
+        iconSpriteId: "hud_xp",
         details: "+5 baseline growth score before multipliers.",
         applySelection: () => {
           this.deps.player.manualGrowthBonus += 5;
@@ -384,6 +393,56 @@ export class LevelOfferBuilder {
     }
     return SURVIVOR_ACCENT_PALETTE[hash % SURVIVOR_ACCENT_PALETTE.length]!;
   }
+}
+
+function resolveWeaponOfferIcon(weaponId: string): string {
+  const map: Record<string, string> = {
+    whip: "lash",
+    bloody_tear: "crimson_lash",
+    magic_wand: "arcane_bolt",
+    holy_wand: "sanctified_bolt",
+    knife: "shard_blade",
+    thousand_edge: "thousand_shards",
+    axe: "cleaver",
+    death_spiral: "reaper_spiral",
+    cross: "sanctum_cross",
+    heaven_sword: "celestial_blade",
+    king_bible: "orbiting_tome",
+    unholy_vespers: "nocturne_tome",
+    fire_wand: "ember_wand",
+    hellfire: "inferno_burst",
+    garlic: "warding_aura",
+    soul_eater: "life_drain",
+    santa_water: "sanctified_tide",
+    la_borra: "deluge",
+    rune_tracer: "rune_shard",
+    no_future: "final_sigil",
+    lightning_ring: "storm_ring",
+    thunder_loop: "tempest_loop",
+    pentagram: "sigil_nova",
+    gorgeous_moon: "lunar_bloom",
+  };
+  return map[weaponId] ?? "button_sword";
+}
+
+function resolvePassiveOfferIcon(passiveId: string): string {
+  const map: Record<string, string> = {
+    spinach: "ironleaf",
+    armor: "bastion_plate",
+    hollow_heart: "vessel_heart",
+    pummarola: "ruby_root",
+    empty_tome: "hollow_tome",
+    candelabrador: "flare_lantern",
+    bracer: "swiftband",
+    spellbinder: "timeweave",
+    duplicator: "echo_lens",
+    wings: "gale_wings",
+    attractorb: "graviton_seed",
+    clover: "fortune_leaf",
+    crown: "ascension_crown",
+    stone_mask: "gilded_mask",
+  };
+  return map[passiveId] ?? "icon_settings";
 }
 
 function describeWeaponLoopEffect(data: WeaponData): string {

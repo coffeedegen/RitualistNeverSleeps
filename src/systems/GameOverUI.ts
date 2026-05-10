@@ -2,12 +2,17 @@ import {
   buildRunCardExportName,
   buildXShareText,
   measureRunCard,
-  renderRunCard,
   type RunCardSummary,
 } from "./RunCardRenderer";
+import { formatRunDuration } from "../utils/time";
+import { createElement } from "react";
+import { flushSync } from "react-dom";
+import { createRoot, type Root } from "react-dom/client";
+import { toBlob } from "html-to-image";
+import MintableCard from "../ui/MintableCard.jsx";
 
-const EXPORT_CARD_WIDTH_PX = 1200;
-const EXPORT_CARD_HEIGHT_PX = 1800; // 2:3 ratio
+const EXPORT_CARD_WIDTH_PX = 1080;
+const EXPORT_CARD_HEIGHT_PX = 900; // export wrapper; actual capture hugs content
 
 interface ButtonRect {
   x: number;
@@ -58,7 +63,7 @@ export class GameOverUI {
       if (cardButtons && this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.mint)) {
         event.preventDefault();
         if (!this.canMintCard()) {
-          window.alert(this.getMintDisabledReason());
+          console.warn("[mint-disabled]", this.getMintDisabledReason());
           return;
         }
         this.markPressed("card-mint");
@@ -123,10 +128,12 @@ export class GameOverUI {
 
   private summary: RunCardSummary | null = null;
 
-  private avatarImage: HTMLImageElement | null = null;
+  private avatarDataUrl: string | null = null;
 
   private avatarLoadSerial = 0;
   private walletPanelHidden = false;
+  private cardHost: HTMLDivElement | null = null;
+  private cardRoot: Root | null = null;
 
   constructor(private readonly callbacks: GameOverUICallbacks) {
     window.addEventListener("mousedown", this.clickListener, true);
@@ -138,9 +145,10 @@ export class GameOverUI {
     this.actionLocked = false;
     this.shareBusy = false;
     this.summary = null;
-    this.avatarImage = null;
+    this.avatarDataUrl = null;
     this.pressedButton = null;
     this.pressedUntilMs = 0;
+    this.destroyReactCard();
     this.setWalletPanelVisible(true);
   }
 
@@ -151,6 +159,7 @@ export class GameOverUI {
     this.shareBusy = false;
     this.pressedButton = null;
     this.pressedUntilMs = 0;
+    this.avatarDataUrl = null;
     this.loadAvatar(summary);
     this.setWalletPanelVisible(false);
   }
@@ -161,6 +170,7 @@ export class GameOverUI {
 
   render(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     if (this.overlayMode === "hidden") {
+      this.destroyReactCard();
       return;
     }
     this.setWalletPanelVisible(false);
@@ -183,16 +193,18 @@ export class GameOverUI {
     this.drawBackdrop(ctx, width, height);
 
     if (this.overlayMode === "confirmQuit") {
+      this.destroyReactCard();
       this.drawTitle(ctx, width, height, null);
       this.drawQuitConfirmation(ctx, width, height);
     } else {
       if (this.summary !== null) {
         const frame = this.getAnimatedCardFrame(width, height);
         this.drawTitle(ctx, width, height, frame);
-        this.renderAnimatedRunCard(ctx, frame, width, height);
+        this.renderReactMintableCard(frame);
         this.drawCardActions(ctx, frame, width, height);
         this.drawMainButtons(ctx, width, height, frame);
       } else {
+        this.destroyReactCard();
         this.drawTitle(ctx, width, height, null);
         this.drawMainButtons(ctx, width, height, null);
       }
@@ -209,35 +221,35 @@ export class GameOverUI {
   ): void {
     const compact = this.isCompactLayout(width, height);
     const titleY = frame
-      ? clamp(frame.y - (compact ? 84 : 92), compact ? 56 : 62, frame.y - (compact ? 38 : 44))
-      : height * (compact ? 0.16 : 0.145);
-    const subtitleY = titleY + (compact ? 24 : 30);
+      ? clamp(frame.y - (compact ? 74 : 82), compact ? 48 : 54, frame.y - (compact ? 32 : 38))
+      : height * (compact ? 0.14 : 0.13);
+    const subtitleY = titleY + (compact ? 18 : 22);
     const titleMaxWidth = frame ? Math.min(width * 0.86, frame.w + 190) : width * 0.8;
     const titleSize = fitHeadlineFont(
       ctx,
-      "THE RITUAL ARCHIVE",
+      "RITUAL RUN ARCHIVE",
       titleMaxWidth,
-      compact ? 40 : 58,
-      compact ? 27 : 36,
+      compact ? 26 : 34,
+      compact ? 17 : 21,
       "900",
       "'Cinzel', 'Times New Roman', serif",
     );
     const titleFill = ctx.createLinearGradient(0, titleY - 28, 0, titleY + 8);
-    titleFill.addColorStop(0, "rgba(255,231,236,0.95)");
-    titleFill.addColorStop(0.62, "rgba(236,143,161,0.92)");
-    titleFill.addColorStop(1, "rgba(197,94,118,0.9)");
+    titleFill.addColorStop(0, "rgba(244,255,249,0.96)");
+    titleFill.addColorStop(0.62, "rgba(202,245,225,0.93)");
+    titleFill.addColorStop(1, "rgba(136,223,181,0.92)");
     ctx.fillStyle = titleFill;
-    ctx.shadowColor = "rgba(255, 118, 145, 0.24)";
-    ctx.shadowBlur = compact ? 7 : 10;
+    ctx.shadowColor = "rgba(87, 224, 166, 0.28)";
+    ctx.shadowBlur = compact ? 6 : 9;
     ctx.font = `900 ${titleSize}px 'Cinzel', 'Times New Roman', serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("THE RITUAL ARCHIVE", width * 0.5, titleY);
+    ctx.fillText("RITUAL RUN ARCHIVE", width * 0.5, titleY);
     ctx.shadowBlur = 0;
 
-    ctx.fillStyle = "rgba(255,255,255,0.46)";
-    ctx.font = `600 ${compact ? 10 : 11}px 'JetBrains Mono', monospace`;
-    ctx.fillText("MINT-READY RUN CARD", width * 0.5, subtitleY);
+    ctx.fillStyle = "rgba(216,233,255,0.52)";
+    ctx.font = `600 ${compact ? 9 : 10}px 'JetBrains Mono', monospace`;
+    ctx.fillText("MINT / SHARE / DOWNLOAD", width * 0.5, subtitleY);
   }
 
   private drawMainButtons(
@@ -400,7 +412,7 @@ export class GameOverUI {
       const gapY = 10;
       const totalW = buttonW * 2 + gapX;
       const x = width * 0.5 - totalW / 2;
-      const preferredY = frame ? frame.y + frame.h + 28 : height * 0.925;
+      const preferredY = frame ? frame.y + frame.h + 34 : height * 0.925;
       const topY = Math.min(Math.max(preferredY, 24), height - buttonH * 2 - gapY - 10);
       return {
         start: { x, y: topY, w: buttonW, h: buttonH },
@@ -414,7 +426,7 @@ export class GameOverUI {
     const gap = Math.max(20, Math.min(30, width * 0.03));
     const totalW = buttonW * 3 + gap * 2;
     const x = width * 0.5 - totalW / 2;
-    const preferredY = frame ? frame.y + frame.h + 34 : height * 0.88;
+    const preferredY = frame ? frame.y + frame.h + 36 : height * 0.88;
     const y = Math.min(Math.max(preferredY, 24), height - buttonH - 14);
 
     return {
@@ -434,11 +446,11 @@ export class GameOverUI {
     download: ButtonRect;
   } {
     const compact = this.isCompactLayout(width, height);
-    const buttonH = compact ? 34 : 38;
+    const buttonH = compact ? 32 : 36;
     const buttonW = compact
-      ? Math.min(214, Math.max(150, frame.w * 0.292))
-      : Math.min(220, Math.max(172, frame.w * 0.228));
-    const gap = compact ? 10 : 14;
+      ? Math.min(198, Math.max(142, frame.w * 0.27))
+      : Math.min(206, Math.max(164, frame.w * 0.212));
+    const gap = compact ? 8 : 12;
     const rowY = Math.max(12, frame.y - (compact ? 46 : 50));
     const totalW = buttonW * 3 + gap * 2;
     const startX = width * 0.5 - totalW / 2;
@@ -487,11 +499,11 @@ export class GameOverUI {
   private getAnimatedCardFrame(width: number, height: number): { x: number; y: number; w: number; h: number } {
     const base = measureRunCard(width, height);
     const t = performance.now() / 1000;
-    const bobX = Math.sin(t * 0.9) * 3;
-    const bobY = Math.sin(t * 1.6) * 6;
+    const bobX = Math.sin(t * 0.6) * 1.2;
+    const bobY = Math.sin(t * 1.2) * 2.4;
     const minX = 12;
     const maxX = Math.max(minX, width - base.w - 12);
-    const topSpace = this.isCompactLayout(width, height) ? 118 : 130;
+    const topSpace = this.isCompactLayout(width, height) ? 110 : 120;
     const bottomSpace = this.isCompactLayout(width, height) ? 104 : 92;
     const minY = topSpace;
     const maxY = height - bottomSpace - base.h;
@@ -507,22 +519,24 @@ export class GameOverUI {
     };
   }
 
-  private renderAnimatedRunCard(
-    ctx: CanvasRenderingContext2D,
-    frame: { x: number; y: number; w: number; h: number },
-    width: number,
-    height: number,
-  ): void {
-    if (!this.summary) {
+  private renderReactMintableCard(frame: { x: number; y: number; w: number; h: number }): void {
+    if (this.summary === null) {
+      this.destroyReactCard();
       return;
     }
-    ctx.save();
-    const base = measureRunCard(width, height);
-    const dx = frame.x - base.x;
-    const dy = frame.y - base.y;
-    ctx.translate(dx, dy);
-    renderRunCard(ctx, this.summary, width, height, this.avatarImage, { mode: "screen" });
-    ctx.restore();
+
+    const host = this.ensureCardHost();
+    host.style.left = `${frame.x}px`;
+    host.style.top = `${frame.y}px`;
+    host.style.width = `${frame.w}px`;
+    host.style.height = `${frame.h}px`;
+    host.style.maxWidth = "none";
+
+    if (!this.cardRoot) {
+      this.cardRoot = createRoot(host);
+    }
+
+    this.cardRoot.render(createElement(MintableCard, this.buildMintableCardProps()));
   }
 
   private markPressed(buttonId: string): void {
@@ -546,10 +560,46 @@ export class GameOverUI {
     this.walletPanelHidden = !visible;
   }
 
+  private ensureCardHost(): HTMLDivElement {
+    if (this.cardHost && this.cardHost.isConnected) {
+      return this.cardHost;
+    }
+
+    const existing = document.getElementById("mintable-card-react-host");
+    if (existing instanceof HTMLDivElement) {
+      this.cardHost = existing;
+      return existing;
+    }
+
+    const host = document.createElement("div");
+    host.id = "mintable-card-react-host";
+    host.style.position = "fixed";
+    host.style.zIndex = "8";
+    host.style.pointerEvents = "none";
+    host.style.left = "0px";
+    host.style.top = "0px";
+    host.style.transform = "translateZ(0)";
+    host.style.willChange = "transform, left, top, width";
+    document.body.appendChild(host);
+    this.cardHost = host;
+    return host;
+  }
+
+  private destroyReactCard(): void {
+    if (this.cardRoot) {
+      this.cardRoot.unmount();
+      this.cardRoot = null;
+    }
+    if (this.cardHost && this.cardHost.isConnected) {
+      this.cardHost.remove();
+    }
+    this.cardHost = null;
+  }
+
   private drawBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    ctx.strokeStyle = "rgba(127, 224, 168, 0.08)";
+    ctx.strokeStyle = "rgba(127, 224, 168, 0.07)";
     ctx.lineWidth = 1.5;
 
     const centerX = width * 0.5;
@@ -560,7 +610,7 @@ export class GameOverUI {
       ctx.stroke();
     }
 
-    ctx.fillStyle = "rgba(255, 107, 122, 0.05)";
+    ctx.fillStyle = "rgba(127, 224, 168, 0.035)";
     ctx.beginPath();
     ctx.arc(centerX, centerY, Math.min(width, height) * 0.1, 0, Math.PI * 2);
     ctx.fill();
@@ -575,37 +625,12 @@ export class GameOverUI {
 
     this.shareBusy = true;
     try {
-      const { blob, file } = await this.buildExportFile();
-      const text = buildXShareText(this.summary.score);
-      const url = URL.createObjectURL(blob);
-      const shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-      const shareWindow = window.open(url, "_blank", "noopener,noreferrer");
-      if (shareWindow) {
-        setTimeout(() => {
-          window.open(shareUrl, "_blank", "noopener,noreferrer");
-        }, 150);
-        return;
-      }
-
-      if (navigator.share && file !== null) {
-        const canShareFiles = typeof navigator.canShare === "function"
-          ? navigator.canShare({ files: [file] })
-          : true;
-        if (canShareFiles) {
-          await navigator.share({
-            text,
-            title: "Ritualist Never Sleeps",
-            files: [file],
-          });
-          return;
-        }
-      }
-
-      await navigator.clipboard.writeText(text);
+      const gameUrl = `${window.location.origin}/`;
+      const text = buildXShareText(this.summary.score, gameUrl);
+      const shareUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(text)}`;
       window.open(shareUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       console.error("Failed to share run card:", error);
-      void this.downloadRunCard();
     } finally {
       this.shareBusy = false;
     }
@@ -616,51 +641,75 @@ export class GameOverUI {
       return;
     }
 
-    const { blob } = await this.buildExportFile();
-    await this.downloadBlob(blob, buildRunCardExportName(this.summary.displayName, this.summary.score));
+    const { blob, filename } = await this.buildExportFile();
+    await this.downloadBlob(blob, filename);
   }
 
-  private async buildExportFile(): Promise<{ blob: Blob; file: File | null }> {
+  private async buildExportFile(): Promise<{ blob: Blob; file: File | null; filename: string }> {
     if (this.summary === null) {
       throw new Error("Run summary is unavailable.");
     }
 
-    const exportCanvas = document.createElement("canvas");
-    exportCanvas.width = EXPORT_CARD_WIDTH_PX;
-    exportCanvas.height = EXPORT_CARD_HEIGHT_PX;
-    const exportCtx = exportCanvas.getContext("2d");
-    if (!exportCtx) {
-      throw new Error("Canvas export context unavailable.");
-    }
+    const host = document.createElement("div");
+    host.id = "mintable-card-export-host";
+    host.style.position = "fixed";
+    host.style.left = "-20000px";
+    host.style.top = "0px";
+    host.style.width = `${EXPORT_CARD_WIDTH_PX}px`;
+    host.style.height = `${EXPORT_CARD_HEIGHT_PX}px`;
+    host.style.pointerEvents = "none";
+    host.style.overflow = "hidden";
+    host.style.zIndex = "-1";
+    host.style.background = "transparent";
+    host.style.contain = "layout paint style";
 
-    renderRunCard(
-      exportCtx,
-      this.summary,
-      exportCanvas.width,
-      exportCanvas.height,
-      this.avatarImage,
-      { mode: "export" },
-    );
+    const mount = document.createElement("div");
+    mount.style.width = `${EXPORT_CARD_WIDTH_PX}px`;
+    mount.style.display = "block";
+    host.appendChild(mount);
+    document.body.appendChild(host);
 
-    const blob = await new Promise<Blob>((resolve, reject) => {
-      exportCanvas.toBlob((value) => {
-        if (value) {
-          resolve(value);
-        } else {
-          reject(new Error("Failed to export run card."));
-        }
-      }, "image/png");
+    const root = createRoot(mount);
+    flushSync(() => {
+      root.render(
+        createElement(MintableCard, this.buildMintableCardProps({
+          className: "h-full w-full",
+          avatarUrl: this.getAvatarSourceForExport(),
+          exportMode: true,
+        })),
+      );
     });
 
-    const file = typeof File !== "undefined"
-      ? new File(
-          [blob],
-          buildRunCardExportName(this.summary.displayName, this.summary.score),
-          { type: "image/png" },
-        )
-      : null;
+    try {
+      await this.waitForExportReady(mount);
+      const captureTarget = mount.firstElementChild instanceof HTMLElement ? mount.firstElementChild : mount;
+      const captureWidth = Math.ceil(captureTarget.getBoundingClientRect().width || EXPORT_CARD_WIDTH_PX);
+      const captureHeight = Math.ceil(captureTarget.getBoundingClientRect().height || EXPORT_CARD_HEIGHT_PX);
+      const blob = await toBlob(captureTarget, {
+        cacheBust: true,
+        backgroundColor: "rgba(0,0,0,0)",
+        pixelRatio: 1,
+        width: captureWidth,
+        height: captureHeight,
+        canvasWidth: captureWidth,
+        canvasHeight: captureHeight,
+        skipAutoScale: true,
+      });
 
-    return { blob, file };
+      if (!blob) {
+        throw new Error("Failed to export run card.");
+      }
+
+      const filename = buildRunCardExportName(this.summary.displayName, this.summary.score);
+      const file = typeof File !== "undefined"
+        ? new File([blob], filename, { type: "image/png" })
+        : null;
+
+      return { blob, file, filename };
+    } finally {
+      root.unmount();
+      host.remove();
+    }
   }
 
   private async downloadBlob(blob: Blob, filename: string): Promise<void> {
@@ -669,13 +718,15 @@ export class GameOverUI {
     link.href = url;
     link.download = filename;
     link.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 1000);
   }
 
   private loadAvatar(summary: RunCardSummary): void {
     const handle = summary.xHandle?.trim();
     if (!handle) {
-      this.avatarImage = null;
+      this.avatarDataUrl = null;
       return;
     }
 
@@ -685,15 +736,126 @@ export class GameOverUI {
     img.crossOrigin = "anonymous";
     img.onload = () => {
       if (serial === this.avatarLoadSerial) {
-        this.avatarImage = img;
+        this.avatarDataUrl = this.tryBuildAvatarDataUrl(img);
       }
     };
     img.onerror = () => {
       if (serial === this.avatarLoadSerial) {
-        this.avatarImage = null;
+        this.avatarDataUrl = null;
       }
     };
     img.src = src;
+  }
+
+  private buildMintableCardProps(
+    overrides: { className?: string; avatarUrl?: string; exportMode?: boolean } = {},
+  ): Record<string, unknown> {
+    if (this.summary === null) {
+      return {};
+    }
+
+    const handle = this.summary.xHandle?.trim() ?? "";
+    const displayHandle = handle
+      ? (handle.startsWith("@") ? handle : `@${handle}`)
+      : this.summary.displayName;
+
+    return {
+      twitterHandle: displayHandle,
+      walletAddress: this.summary.walletAddress,
+      tier: this.summary.rankTitle,
+      finalScore: this.summary.score,
+      kills: this.summary.kills,
+      duration: formatRunDuration(this.summary.survivedMs),
+      level: this.summary.level,
+      rank: this.summary.rankTitle,
+      score: this.summary.score,
+      dateMinted: formatMintDateStamp(this.summary.capturedAt),
+      timeUTC: formatMintTimeStamp(this.summary.capturedAt),
+      avatarUrl:
+        overrides.avatarUrl
+        ?? this.getAvatarSourceForDisplay(),
+      className: overrides.className,
+      exportMode: overrides.exportMode ?? false,
+    };
+  }
+
+  private getAvatarSourceForDisplay(): string {
+    if (this.avatarDataUrl) {
+      return this.avatarDataUrl;
+    }
+    return "";
+  }
+
+  private getAvatarSourceForExport(): string {
+    if (this.avatarDataUrl) {
+      return this.avatarDataUrl;
+    }
+    return "";
+  }
+
+  private tryBuildAvatarDataUrl(image: HTMLImageElement): string | null {
+    try {
+      const canvas = document.createElement("canvas");
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!width || !height) {
+        return null;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return null;
+      }
+      context.drawImage(image, 0, 0);
+      return canvas.toDataURL("image/png");
+    } catch {
+      return null;
+    }
+  }
+
+  private async waitForExportReady(host: HTMLElement): Promise<void> {
+    if (typeof document.fonts?.ready?.then === "function") {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // Ignore font loading failures and continue with capture.
+      }
+    }
+
+    await this.waitForFrame();
+    await this.waitForFrame();
+    await this.waitForImages(host);
+    await this.waitForFrame();
+    await this.waitForPaintDelay();
+  }
+
+  private async waitForImages(host: HTMLElement): Promise<void> {
+    const images = Array.from(host.querySelectorAll("img"));
+    await Promise.all(
+      images.map((image) => {
+        if (image.complete && image.naturalWidth > 0) {
+          return Promise.resolve();
+        }
+
+        return new Promise<void>((resolve) => {
+          image.addEventListener("load", () => resolve(), { once: true });
+          image.addEventListener("error", () => resolve(), { once: true });
+        });
+      }),
+    );
+  }
+
+  private waitForFrame(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  }
+
+  private waitForPaintDelay(): Promise<void> {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, 60);
+    });
   }
 
   private withAlpha(hex: string, alpha: number): string {
@@ -773,6 +935,21 @@ function wrapAndFillText(
       ctx.fillText(line, centerX, startY + idx * lineHeight);
     }
   }
+}
+
+function formatMintDateStamp(epochMs: number): string {
+  const date = new Date(epochMs);
+  const year = String(date.getUTCFullYear()).padStart(4, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatMintTimeStamp(epochMs: number): string {
+  const date = new Date(epochMs);
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${hours}:${minutes} UTC`;
 }
 
 function clamp(value: number, min: number, max: number): number {

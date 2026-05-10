@@ -16,6 +16,9 @@ export class Camera {
   /** Logical viewport height in CSS pixels (matches canvas client height post-resize). */
   viewportHeightCss = 450;
 
+  /** World zoom multiplier (`1` = default scale, `2` = 200% zoom-in). */
+  zoom = 1;
+
   /**
    * Recenters the logical viewport dimensions after a canvas resize.
    * @param widthCss Logical width available for drawing (CSS px).
@@ -32,11 +35,14 @@ export class Camera {
    * @param ctx Active 2D context (already scaled for DPR by `resizeCanvasToDisplaySize`).
    */
   applyWorldTransform(ctx: CanvasRenderingContext2D): void {
+    const snappedX = Math.round(this.x);
+    const snappedY = Math.round(this.y);
     ctx.translate(
       Math.floor(this.viewportWidthCss / 2),
       Math.floor(this.viewportHeightCss / 2),
     );
-    ctx.translate(-this.x, -this.y);
+    ctx.scale(this.zoom, this.zoom);
+    ctx.translate(-snappedX, -snappedY);
   }
 
   /**
@@ -49,14 +55,20 @@ export class Camera {
     minY: number;
     maxY: number;
   } {
-    const hw = this.viewportWidthCss / 2 + VIEW_MARGIN_PX;
-    const hh = this.viewportHeightCss / 2 + VIEW_MARGIN_PX;
+    const safeZoom = Math.max(0.2, this.zoom);
+    const hw = this.viewportWidthCss / (2 * safeZoom) + VIEW_MARGIN_PX;
+    const hh = this.viewportHeightCss / (2 * safeZoom) + VIEW_MARGIN_PX;
     return {
       minX: this.x - hw,
       maxX: this.x + hw,
       minY: this.y - hh,
       maxY: this.y + hh,
     };
+  }
+
+  /** Sets gameplay zoom (clamped to avoid accidental invalid transforms). */
+  setZoom(zoom: number): void {
+    this.zoom = Math.min(4, Math.max(0.2, zoom));
   }
 
   /** Snaps camera to a world-space point (direct follow). */

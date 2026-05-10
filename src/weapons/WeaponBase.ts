@@ -17,6 +17,7 @@ export interface EnemyDamagePacket {
 }
 
 export interface ProjectileSpawnPayload {
+  sourceWeaponId?: string;
   originX: number;
   originY: number;
   dirX: number;

@@ -2,7 +2,11 @@ import "./style.css";
 import { Game } from "./Game";
 import { Debug } from "./utils/debug";
 import { Homepage } from "./ui/Homepage";
+import { computeHudTopStripMetrics } from "./ui/HUD";
 import { BrowserProvider } from "ethers";
+import { createAppKit } from "@reown/appkit";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { defineChain } from "viem";
 import { Web3Manager, WalletConnectUI, WalletContext, type Web3WalletData } from "./web3";
 import { clearWalletSession, setWalletSession } from "./platform/wallet/WalletSession";
 import {
@@ -29,15 +33,119 @@ let currentWallet: Web3WalletData | null = null;
 let web3Manager: Web3Manager | null = null;
 let mintInFlight = false;
 let mintPreflightIssue: string | null = null;
-const MINT_WALLET_APPROVAL_TIMEOUT_MS = 20_000;
-const DEBUG_BYPASS_TO_GAME_OVER = import.meta.env.DEV
-  && new URLSearchParams(window.location.search).get("debug") === "gameover";
+let walletHeaderResizeRaf = 0;
+type DebugLaunchMode = "none" | "gameover" | "levelup";
+function resolveDebugLaunchMode(): DebugLaunchMode {
+  if (!import.meta.env.DEV) {
+    return "none";
+  }
+  const mode = new URLSearchParams(window.location.search).get("debug")?.trim().toLowerCase();
+  if (mode === "gameover") {
+    return "gameover";
+  }
+  if (mode === "levelup") {
+    return "levelup";
+  }
+  return "none";
+}
+const DEBUG_LAUNCH_MODE = resolveDebugLaunchMode();
+const WALLETCONNECT_PROJECT_ID = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "").trim();
+
+// Ritual Testnet definition used by Reown AppKit + Wagmi adapter.
+export const ritualTestnet = defineChain({
+  id: 1979,
+  name: "Ritual",
+  nativeCurrency: {
+    decimals: 18,
+    name: "RITUAL",
+    symbol: "RITUAL",
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://rpc.ritualfoundation.org"],
+      webSocket: ["wss://rpc.ritualfoundation.org/ws"],
+    },
+    public: {
+      http: ["https://rpc.ritualfoundation.org"],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Ritual Explorer", url: "https://explorer.ritualfoundation.org" },
+  },
+  testnet: true,
+});
 
 // Web3 wallet configuration
 const WALLET_STORAGE_KEY = "ritual_wallet_data";
 type PersistedWalletData = Pick<Web3WalletData, "address" | "chainId" | "balance"> & {
   mode: "metamask";
   xHandle?: string | null;
+};
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getConnectedWalletPanelTopOffset(): number {
+  const layout = computeHudTopStripMetrics(window.innerWidth, window.innerHeight);
+  const gapByBucket = layout.compact ? 8 : layout.tight ? 10 : 12;
+  return clampInt(layout.topStripBottom + gapByBucket, 96, 220);
+}
+
+function showUiNotice(message: string, tone: "info" | "success" | "error" = "info"): void {
+  const existing = document.getElementById("ritual-ui-notice");
+  if (existing) {
+    existing.remove();
+  }
+
+  const notice = document.createElement("div");
+  notice.id = "ritual-ui-notice";
+  const palette = tone === "success"
+    ? { border: "rgba(65, 211, 124, 0.65)", text: "#9af3bf", bg: "rgba(8, 22, 14, 0.92)" }
+    : tone === "error"
+      ? { border: "rgba(255, 107, 122, 0.65)", text: "#ffd2d8", bg: "rgba(28, 8, 14, 0.92)" }
+      : { border: "rgba(138, 164, 255, 0.55)", text: "#dbe4ff", bg: "rgba(9, 14, 28, 0.92)" };
+
+  notice.style.cssText = `
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 26px;
+    max-width: min(86vw, 780px);
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid ${palette.border};
+    background: ${palette.bg};
+    color: ${palette.text};
+    font: 600 12px 'JetBrains Mono', monospace;
+    letter-spacing: 0.18px;
+    z-index: 10001;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.36);
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+    text-align: center;
+    white-space: pre-wrap;
+  `;
+  notice.textContent = message;
+  document.body.appendChild(notice);
+
+  window.setTimeout(() => {
+    if (notice.parentElement) {
+      notice.remove();
+    }
+  }, tone === "error" ? 5200 : 3600);
+}
+
+const onViewportResize = (): void => {
+  if (walletHeaderResizeRaf !== 0) {
+    cancelAnimationFrame(walletHeaderResizeRaf);
+  }
+  walletHeaderResizeRaf = requestAnimationFrame(() => {
+    walletHeaderResizeRaf = 0;
+    if (document.getElementById("wallet-info-header")) {
+      updateUIWithWalletInfo();
+    }
+  });
 };
 
 function initializeWeb3(): void {
@@ -53,6 +161,30 @@ function initializeWeb3(): void {
     },
     onDisconnected: () => {
       disconnectWallet();
+    },
+  });
+}
+
+function initializeAppKit(): void {
+  if (!WALLETCONNECT_PROJECT_ID) {
+    console.warn("[appkit] Missing `VITE_WALLETCONNECT_PROJECT_ID`. Skipping AppKit initialization.");
+    return;
+  }
+
+  const wagmiAdapter = new WagmiAdapter({
+    projectId: WALLETCONNECT_PROJECT_ID,
+    networks: [ritualTestnet],
+  });
+
+  createAppKit({
+    adapters: [wagmiAdapter],
+    networks: [ritualTestnet],
+    projectId: WALLETCONNECT_PROJECT_ID,
+    metadata: {
+      name: "Ritualist Never Sleeps",
+      description: "A Vanilla TS dApp on Ritual",
+      url: window.location.origin,
+      icons: ["https://avatars.githubusercontent.com/u/37784886"],
     },
   });
 }
@@ -112,7 +244,7 @@ function updateUIWithWalletInfo(): void {
 
   const headerDiv = document.createElement("div");
   headerDiv.id = "wallet-info-header";
-  const walletTopOffset = currentWallet ? 110 : 10;
+  const walletTopOffset = currentWallet ? getConnectedWalletPanelTopOffset() : 10;
   headerDiv.style.cssText = `
     position: fixed;
     top: ${walletTopOffset}px;
@@ -267,7 +399,7 @@ function mountHomepage(): void {
   game?.dispose();
   game = null;
 
-  if (DEBUG_BYPASS_TO_GAME_OVER) {
+  if (DEBUG_LAUNCH_MODE !== "none") {
     mountGame();
     return;
   }
@@ -308,44 +440,30 @@ function mountGame(): void {
     },
     onMintCard: (summary) => {
       if (mintPreflightIssue) {
-        window.alert(`Mint is unavailable: ${mintPreflightIssue}`);
+        showUiNotice(`Mint unavailable: ${mintPreflightIssue}`, "error");
         return;
       }
 
       if (mintInFlight) {
-        window.alert("Mint request is already in progress.");
+        showUiNotice("Mint request already in progress. Check MetaMask.", "info");
         return;
       }
 
       mintInFlight = true;
-      window.alert("Preparing mint transaction.\nWaiting for wallet approval...");
+      showUiNotice("Open MetaMask to approve the mint transaction.", "info");
 
-      const submissionPromise = submitRunCardMintOnRitual(summary, currentWallet, web3Manager);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        const timer = window.setTimeout(() => {
-          reject(
-            new Error(
-              "Wallet approval timed out. Please open MetaMask and approve the transaction.",
-            ),
-          );
-        }, MINT_WALLET_APPROVAL_TIMEOUT_MS);
-        submissionPromise.finally(() => {
-          window.clearTimeout(timer);
-        });
-      });
-
-      void Promise.race([submissionPromise, timeoutPromise])
+      void submitRunCardMintOnRitual(summary, currentWallet, web3Manager)
         .then(async (submission) => {
-          window.alert(`Transaction submitted.\nTx hash: ${submission.txHash}\nWaiting for confirmation...`);
+          showUiNotice("Transaction submitted. Waiting for confirmation...", "info");
           const receipt = await submission.waitForReceipt();
           const txHash = receipt.hash ?? submission.txHash ?? "unknown";
           console.info("Mint confirmed:", txHash, receipt);
-          window.alert(`Mint succeeded.\nTx hash: ${txHash}`);
+          showUiNotice(`Mint succeeded.\nTx: ${txHash}`, "success");
         })
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : "Mint failed.";
           console.error("Mint failed:", error);
-          window.alert(`Mint failed: ${message}`);
+          showUiNotice(`Mint failed: ${message}`, "error");
         })
         .finally(() => {
           mintInFlight = false;
@@ -355,8 +473,10 @@ function mountGame(): void {
     getMintDisabledReason: () => mintPreflightIssue,
   });
   game.start();
-  if (DEBUG_BYPASS_TO_GAME_OVER) {
+  if (DEBUG_LAUNCH_MODE === "gameover") {
     game.debugOpenGameOverOverlay();
+  } else if (DEBUG_LAUNCH_MODE === "levelup") {
+    game.debugOpenLevelUpOverlay();
   }
   Debug.log("game started");
 }
@@ -382,6 +502,8 @@ function requestQuit(): void {
 
 // Show homepage first. Game starts only after "Initiate Ritual" is clicked.
 async function bootstrap(): Promise<void> {
+  window.addEventListener("resize", onViewportResize);
+  initializeAppKit();
   initializeWeb3();
   mintPreflightIssue = getMintPreflightIssue();
   if (mintPreflightIssue) {
@@ -395,6 +517,11 @@ void bootstrap();
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
+    window.removeEventListener("resize", onViewportResize);
+    if (walletHeaderResizeRaf !== 0) {
+      cancelAnimationFrame(walletHeaderResizeRaf);
+      walletHeaderResizeRaf = 0;
+    }
     homepage?.dispose();
     game?.dispose();
   });

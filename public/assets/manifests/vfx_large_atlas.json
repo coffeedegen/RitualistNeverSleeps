@@ -1,0 +1,1 @@
+{"image":"public/assets/vfx/vfx_large_atlas.png","cell":{"w":256,"h":256},"grid":{"cols":2,"rows":1},"sprites":[{"id":"levelup_burst","x":0,"y":0,"w":256,"h":256},{"id":"screen_clear","x":256,"y":0,"w":256,"h":256}]}

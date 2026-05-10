@@ -13,6 +13,18 @@ import {
 } from "../utils/constants";
 import type { WeaponRuntimeContext } from "./WeaponBase";
 
+const VFX_MEDIUM_SHEET_SRC = "/assets/vfx/vfx_medium_atlas.png";
+const LASH_STRIP_RECT = { x: 384, y: 0, w: 192, h: 192 };
+const RITUAL_WAVE_RECT = { x: 576, y: 0, w: 192, h: 192 };
+const HOLY_RING_RECT = { x: 0, y: 0, w: 192, h: 192 };
+const WEAPON_ICONS_SHEET_SRC = "/assets/weapons/weapon_icons_64_atlas.png";
+const ORBITING_TOME_RECT = { x: 256, y: 64, w: 64, h: 64 };
+const NOCTURNE_TOME_RECT = { x: 320, y: 64, w: 64, h: 64 };
+let vfxMediumSheetImage: HTMLImageElement | null = null;
+let vfxMediumSheetRequested = false;
+let weaponIconsSheetImage: HTMLImageElement | null = null;
+let weaponIconsSheetRequested = false;
+
 /** Interface implemented by authored weapon behaviours. */
 export interface WeaponBehaviour {
   readonly weaponId: string;
@@ -98,6 +110,9 @@ interface LashStrikeVisual {
   tailY: number;
   curlDir: number;
   recoilPx: number;
+  swingPhase: number;
+  arcLiftPx: number;
+  tipCrackPx: number;
   ttlMs: number;
   maxTtlMs: number;
 }
@@ -161,9 +176,12 @@ class LashSlashBehaviour extends BehaviourBase {
         tailX,
         tailY,
         curlDir: i % 2 === 0 ? 1 : -1,
-        recoilPx: 10,
-        ttlMs: 180,
-        maxTtlMs: 180,
+        recoilPx: 14,
+        swingPhase: i * 0.8,
+        arcLiftPx: 14 + merged.areaMultiplier * 4,
+        tipCrackPx: 10 + merged.areaMultiplier * 3,
+        ttlMs: 220,
+        maxTtlMs: 220,
       });
 
       const queryRadius = Math.max(a, b);
@@ -192,64 +210,83 @@ class LashSlashBehaviour extends BehaviourBase {
       this.weaponId === "bloody_tear" ? "#ff6b7a" : "#dfe7ff",
       1.05 + merged.areaMultiplier * 0.12,
     );
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + dirX * 84,
+      ctx.playerOriginY + dirY * 10,
+      this.weaponId === "bloody_tear" ? "#ff8e99" : "#b9d2ff",
+      1.18 + merged.areaMultiplier * 0.16,
+    );
     this.cadenceRemainMs = merged.cooldownMs;
   }
 
   renderWorld(ctx: CanvasRenderingContext2D): void {
     for (const strike of this.strikes) {
-      const alpha = Math.max(0, strike.ttlMs / strike.maxTtlMs);
-      const whipProgress = 1 - alpha;
-      const snap = Math.sin(Math.min(1, whipProgress) * Math.PI) * 1.25;
-      const recoil = Math.max(0, strike.recoilPx * alpha);
+      const life = Math.max(0, strike.ttlMs / strike.maxTtlMs);
+      const progress = 1 - life;
+      const castPhase = Math.min(1, progress / 0.34);
+      const snapPhase = Math.min(1, Math.max(0, (progress - 0.2) / 0.36));
+      const recoilPhase = Math.min(1, Math.max(0, (progress - 0.58) / 0.42));
+      const alpha = Math.min(1, life * 1.18);
+      const snap = Math.sin(snapPhase * Math.PI) * 1.38;
+      const recoil = strike.recoilPx * recoilPhase;
+      const lift = (1 - castPhase) * strike.arcLiftPx;
+      const swing = Math.sin(progress * Math.PI * 1.8 + strike.swingPhase) * 7 * life;
       
       ctx.save();
       ctx.translate(
-        -(strike.tipX - strike.tailX) * 0.012 * recoil,
-        -(strike.tipY - strike.tailY) * 0.012 * recoil,
+        -(strike.tipX - strike.tailX) * 0.014 * recoil,
+        -(strike.tipY - strike.tailY) * 0.014 * recoil,
       );
       
       const baseColor = this.weaponId === "bloody_tear"
-        ? { fill: `rgba(220, 20, 60, ${alpha * 0.42})`, stroke: `rgba(255, 126, 126, ${alpha})`, glow: `rgba(255, 80, 112, ${alpha * 0.28})` }
-        : { fill: `rgba(214, 229, 255, ${alpha * 0.42})`, stroke: `rgba(255, 255, 255, ${alpha})`, glow: `rgba(145, 190, 255, ${alpha * 0.24})` };
+        ? { fill: `rgba(220, 20, 60, ${alpha * 0.45})`, stroke: `rgba(255, 126, 126, ${alpha})`, glow: `rgba(255, 80, 112, ${alpha * 0.34})` }
+        : { fill: `rgba(214, 229, 255, ${alpha * 0.45})`, stroke: `rgba(255, 255, 255, ${alpha})`, glow: `rgba(145, 190, 255, ${alpha * 0.3})` };
+
+      drawLashStripSprite(
+        ctx,
+        strike,
+        alpha,
+        this.weaponId === "bloody_tear",
+      );
 
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
       ctx.strokeStyle = baseColor.glow;
-      ctx.lineWidth = 11;
+      ctx.lineWidth = 12;
       ctx.beginPath();
       ctx.moveTo(strike.tailX, strike.tailY);
       ctx.quadraticCurveTo(
-        strike.midX + strike.curlDir * 24 * snap,
-        strike.midY - 8,
+        strike.midX + strike.curlDir * (20 * castPhase + 24 * snap) + swing * strike.curlDir,
+        strike.midY - 8 - lift,
         strike.tipX,
         strike.tipY,
       );
       ctx.stroke();
 
       ctx.strokeStyle = baseColor.stroke;
-      ctx.lineWidth = 4.8;
+      ctx.lineWidth = 5.2;
       ctx.beginPath();
       ctx.moveTo(strike.tailX, strike.tailY);
       ctx.quadraticCurveTo(
-        strike.midX + strike.curlDir * 18 * snap,
-        strike.midY - 4,
+        strike.midX + strike.curlDir * (14 * castPhase + 18 * snap) + swing * 0.7 * strike.curlDir,
+        strike.midY - 4 - lift * 0.72,
         strike.tipX,
         strike.tipY,
       );
       ctx.stroke();
 
-      const segmentCount = 5;
+      const segmentCount = 6;
       for (let segment = 1; segment < segmentCount; segment += 1) {
         const t = segment / segmentCount;
         const oneMinus = 1 - t;
         const knotX =
           oneMinus * oneMinus * strike.tailX +
-          2 * oneMinus * t * (strike.midX + strike.curlDir * 10 * snap) +
+          2 * oneMinus * t * (strike.midX + strike.curlDir * (7 + 10 * snap) + swing * 0.5 * strike.curlDir) +
           t * t * strike.tipX;
         const knotY =
           oneMinus * oneMinus * strike.tailY +
-          2 * oneMinus * t * (strike.midY - 4) +
+          2 * oneMinus * t * (strike.midY - 4 - lift * 0.55) +
           t * t * strike.tipY;
         ctx.beginPath();
         ctx.arc(knotX, knotY, Math.max(1.2, 3.4 - t * 1.8), 0, Math.PI * 2);
@@ -261,8 +298,27 @@ class LashSlashBehaviour extends BehaviourBase {
 
       ctx.fillStyle = baseColor.fill;
       ctx.beginPath();
-      ctx.arc(strike.tipX, strike.tipY, 6 + snap * 2, 0, Math.PI * 2);
+      ctx.arc(strike.tipX, strike.tipY, 6.4 + snap * 2.6, 0, Math.PI * 2);
       ctx.fill();
+
+      // Whip crack highlight at the tip during peak snap.
+      const crackAlpha = alpha * Math.sin(snapPhase * Math.PI) * (1 - recoilPhase * 0.35);
+      if (crackAlpha > 0.02) {
+        ctx.beginPath();
+        ctx.ellipse(
+          strike.tipX + Math.cos(strike.angle) * strike.tipCrackPx,
+          strike.tipY + Math.sin(strike.angle) * strike.tipCrackPx,
+          9 + snap * 4,
+          3 + snap * 1.4,
+          strike.angle,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fillStyle = this.weaponId === "bloody_tear"
+          ? `rgba(255, 214, 220, ${crackAlpha * 0.72})`
+          : `rgba(255, 255, 255, ${crackAlpha * 0.65})`;
+        ctx.fill();
+      }
 
       ctx.beginPath();
       ctx.arc(strike.tailX, strike.tailY, 4.2, 0, Math.PI * 2);
@@ -275,6 +331,8 @@ class LashSlashBehaviour extends BehaviourBase {
 }
 
 class MagicVolleyBehaviour extends BehaviourBase {
+  private castPhase = 0;
+
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     this.regressCadence(ctx.dtMs);
     if (this.cadenceRemainMs > 0) {
@@ -310,14 +368,126 @@ class MagicVolleyBehaviour extends BehaviourBase {
       const dirX = Math.cos(theta);
       const dirY = Math.sin(theta);
       spawnDirectedBolt(ctx, merged, data, dirX, dirY);
+
+      const offset = (idx - (shots - 1) * 0.5) * (9 + merged.areaMultiplier * 2.4);
+      const perpX = -aimY;
+      const perpY = aimX;
+      const sideWave = Math.sin(this.castPhase + idx * 0.72) * 3.6;
+      const front = 12 + merged.areaMultiplier * 3.5;
+      ctx.spawnSkillBurst(
+        ctx.playerOriginX + aimX * front + perpX * (offset + sideWave),
+        ctx.playerOriginY + aimY * front + perpY * (offset + sideWave),
+        "#8ca0ff",
+        0.72 + merged.areaMultiplier * 0.08,
+      );
     }
-    ctx.spawnSkillBurst(ctx.playerOriginX + aimX * 12, ctx.playerOriginY + aimY * 12, "#7b8cff", 0.95);
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + aimX * 12,
+      ctx.playerOriginY + aimY * 12,
+      "#7b8cff",
+      0.95,
+    );
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + aimX * 22,
+      ctx.playerOriginY + aimY * 22,
+      "#c9d3ff",
+      0.74,
+    );
+    this.castPhase += 0.82;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
 }
 
+function drawLashStripSprite(
+  ctx: CanvasRenderingContext2D,
+  strike: LashStrikeVisual,
+  alpha: number,
+  isCrimson: boolean,
+): void {
+  const sheet = getVfxMediumSheetImage();
+  if (sheet === null) {
+    return;
+  }
+
+  const dx = strike.tipX - strike.tailX;
+  const dy = strike.tipY - strike.tailY;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) {
+    return;
+  }
+
+  const angle = Math.atan2(dy, dx);
+  const thickness = 18 + Math.sin((1 - alpha) * Math.PI) * 7;
+  const tintAlpha = Math.min(0.52, alpha * 0.56);
+
+  ctx.save();
+  ctx.globalAlpha = tintAlpha;
+  ctx.translate(strike.tailX, strike.tailY);
+  ctx.rotate(angle);
+  ctx.drawImage(
+    sheet,
+    LASH_STRIP_RECT.x,
+    LASH_STRIP_RECT.y,
+    LASH_STRIP_RECT.w,
+    LASH_STRIP_RECT.h,
+    -10,
+    -thickness * 0.5,
+    length + 20,
+    thickness,
+  );
+
+  if (isCrimson) {
+    ctx.globalCompositeOperation = "source-atop";
+    ctx.fillStyle = `rgba(255, 72, 102, ${Math.min(0.3, alpha * 0.32)})`;
+    ctx.fillRect(-10, -thickness * 0.5, length + 20, thickness);
+  }
+  ctx.restore();
+}
+
+function getVfxMediumSheetImage(): HTMLImageElement | null {
+  if (vfxMediumSheetImage !== null && vfxMediumSheetImage.complete) {
+    return vfxMediumSheetImage;
+  }
+  if (vfxMediumSheetRequested) {
+    return null;
+  }
+
+  vfxMediumSheetRequested = true;
+  const img = new Image();
+  img.src = VFX_MEDIUM_SHEET_SRC;
+  img.onload = () => {
+    vfxMediumSheetImage = img;
+  };
+  img.onerror = () => {
+    vfxMediumSheetRequested = false;
+  };
+  return null;
+}
+
+function getWeaponIconsSheetImage(): HTMLImageElement | null {
+  if (weaponIconsSheetImage !== null && weaponIconsSheetImage.complete) {
+    return weaponIconsSheetImage;
+  }
+  if (weaponIconsSheetRequested) {
+    return null;
+  }
+
+  weaponIconsSheetRequested = true;
+  const img = new Image();
+  img.src = WEAPON_ICONS_SHEET_SRC;
+  img.onload = () => {
+    weaponIconsSheetImage = img;
+  };
+  img.onerror = () => {
+    weaponIconsSheetRequested = false;
+  };
+  return null;
+}
+
 class ShardStreamBehaviour extends BehaviourBase {
+  private castPhase = 0;
+
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     this.regressCadence(ctx.dtMs);
     if (this.cadenceRemainMs > 0) {
@@ -337,14 +507,42 @@ class ShardStreamBehaviour extends BehaviourBase {
         (burst - (bursts - 1) * 0.5) * (MAGIC_WAND_MULTI_SHOT_SPREAD_RAD * 0.6);
       const theta = baseAngle + jitter;
       spawnDirectedBolt(ctx, merged, data, Math.cos(theta), Math.sin(theta));
+
+      const sidePerpX = -aimY;
+      const sidePerpY = aimX;
+      const lateral = (burst - (bursts - 1) * 0.5) * (8 + merged.areaMultiplier * 2.5);
+      const front = 10 + merged.areaMultiplier * 3.2;
+      const phaseWave = Math.sin(this.castPhase + burst * 0.85) * 3.4;
+      const burstX = ctx.playerOriginX + aimX * front + sidePerpX * lateral;
+      const burstY = ctx.playerOriginY + aimY * front + sidePerpY * lateral;
+      ctx.spawnSkillBurst(
+        burstX + sidePerpX * phaseWave * 0.6,
+        burstY + sidePerpY * phaseWave * 0.6,
+        "#dce8ff",
+        0.75 + merged.areaMultiplier * 0.08,
+      );
     }
-    ctx.spawnSkillBurst(ctx.playerOriginX + aimX * 10, ctx.playerOriginY + aimY * 10, "#f2f7ff", 0.9);
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + aimX * 11,
+      ctx.playerOriginY + aimY * 11,
+      "#f2f7ff",
+      0.94 + merged.areaMultiplier * 0.08,
+    );
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + aimX * 18,
+      ctx.playerOriginY + aimY * 18,
+      "#9fbaff",
+      0.72 + merged.areaMultiplier * 0.07,
+    );
+    this.castPhase += 0.9;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
 }
 
 class CleaverArcBehaviour extends BehaviourBase {
+  private castPhase = 0;
+
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     this.regressCadence(ctx.dtMs);
     if (this.cadenceRemainMs > 0) {
@@ -383,15 +581,46 @@ class CleaverArcBehaviour extends BehaviourBase {
         Math.sin(theta),
         PROJECTILE_DOWNWARD_GRAVITY_PPS2,
       );
+
+      const lane = ix - (bursts - 1) * 0.5;
+      const arcLift = Math.sin(this.castPhase + ix * 0.5) * 2.4;
+      ctx.spawnSkillBurst(
+        ctx.playerOriginX + Math.cos(theta) * (9 + lane * 2),
+        ctx.playerOriginY + Math.sin(theta) * (9 + lane * 2) - arcLift,
+        "#ffb26c",
+        0.72 + merged.areaMultiplier * 0.06,
+      );
     }
-    ctx.spawnSkillBurst(ctx.playerOriginX + dirX * 8, ctx.playerOriginY + dirY * 8, "#ffbb6a", 1.0);
+    ctx.spawnSkillBurst(ctx.playerOriginX + dirX * 8, ctx.playerOriginY + dirY * 8, "#ffbb6a", 0.96);
+    this.castPhase += 0.63;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
 }
 
 class SanctumCrossBehaviour extends BehaviourBase {
+  private phase = 0;
+  private pulses: Array<{
+    x: number;
+    y: number;
+    phase: number;
+    ttlMs: number;
+    maxTtlMs: number;
+    radius: number;
+  }> = [];
+
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
+    for (let i = this.pulses.length - 1; i >= 0; i -= 1) {
+      const pulse = this.pulses[i];
+      if (pulse === undefined) {
+        continue;
+      }
+      pulse.ttlMs -= ctx.dtMs;
+      if (pulse.ttlMs <= 0) {
+        this.pulses.splice(i, 1);
+      }
+    }
+
     this.regressCadence(ctx.dtMs);
     if (this.cadenceRemainMs > 0) {
       return;
@@ -413,9 +642,114 @@ class SanctumCrossBehaviour extends BehaviourBase {
         spawnDirectedBolt(ctx, merged, data, dir.x, dir.y);
       }
     }
-    ctx.spawnSkillBurst(ctx.playerOriginX, ctx.playerOriginY, "#ffd95a", 1.1);
+
+    this.pulses.push({
+      x: ctx.playerOriginX,
+      y: ctx.playerOriginY,
+      phase: this.phase * 0.67,
+      ttlMs: 280,
+      maxTtlMs: 280,
+      radius: 34 + merged.areaMultiplier * 12,
+    });
+
+    // Ritual cross pulse: center ignition + 4 directional flares with phase rotation.
+    const coreScale = 1.08 + merged.areaMultiplier * 0.1;
+    ctx.spawnSkillBurst(ctx.playerOriginX, ctx.playerOriginY, "#ffd95a", coreScale);
+    ctx.spawnSkillBurst(ctx.playerOriginX, ctx.playerOriginY, "#fff2b7", coreScale * 0.72);
+
+    const phaseAngle = this.phase * 0.58;
+    const outward = 18 + merged.areaMultiplier * 7;
+    for (let i = 0; i < cardinals.length; i += 1) {
+      const dir = cardinals[i];
+      if (dir === undefined) {
+        continue;
+      }
+      const spin = phaseAngle + i * (Math.PI * 0.5);
+      const swirlX = Math.cos(spin) * 5;
+      const swirlY = Math.sin(spin) * 5;
+      const burstX = ctx.playerOriginX + dir.x * outward + swirlX;
+      const burstY = ctx.playerOriginY + dir.y * outward + swirlY;
+      ctx.spawnSkillBurst(
+        burstX,
+        burstY,
+        i % 2 === 0 ? "#ffd95a" : "#ffe99a",
+        0.84 + merged.areaMultiplier * 0.08,
+      );
+    }
+    this.phase += 1;
 
     this.cadenceRemainMs = merged.cooldownMs;
+  }
+
+  renderWorld(ctx: CanvasRenderingContext2D): void {
+    const sheet = getVfxMediumSheetImage();
+    for (const pulse of this.pulses) {
+      const life = Math.max(0, pulse.ttlMs / pulse.maxTtlMs);
+      const progress = 1 - life;
+      const ringRadius = pulse.radius + progress * 24;
+      const glowAlpha = life * 0.5;
+
+      if (sheet !== null) {
+        const size = ringRadius * 2.25;
+        ctx.save();
+        ctx.globalAlpha = glowAlpha * 0.9;
+        ctx.drawImage(
+          sheet,
+          HOLY_RING_RECT.x,
+          HOLY_RING_RECT.y,
+          HOLY_RING_RECT.w,
+          HOLY_RING_RECT.h,
+          pulse.x - size / 2,
+          pulse.y - size / 2,
+          size,
+          size,
+        );
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.fillStyle = "rgba(255, 244, 196, 0.54)";
+        ctx.fillRect(pulse.x - size / 2, pulse.y - size / 2, size, size);
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(pulse.x, pulse.y, ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 245, 208, ${0.34 + glowAlpha * 0.64})`;
+      ctx.lineWidth = 1.85;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(pulse.x, pulse.y, ringRadius * 0.62, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 229, 154, ${0.22 + glowAlpha * 0.42})`;
+      ctx.lineWidth = 1.05;
+      ctx.stroke();
+
+      const beamLen = ringRadius * 0.95;
+      const beamThickness = 1.7 + life * 0.92;
+      const phase = pulse.phase + progress * 0.9;
+      const dirs = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+      ];
+      for (let i = 0; i < dirs.length; i += 1) {
+        const dir = dirs[i];
+        if (dir === undefined) {
+          continue;
+        }
+        const wave = Math.sin(phase + i * (Math.PI / 2)) * 4.2;
+        ctx.beginPath();
+        ctx.moveTo(pulse.x, pulse.y);
+        ctx.lineTo(
+          pulse.x + dir.x * beamLen + (dir.y * wave),
+          pulse.y + dir.y * beamLen - (dir.x * wave),
+        );
+        ctx.strokeStyle = `rgba(255, 250, 224, ${0.34 + glowAlpha * 0.42})`;
+        ctx.lineWidth = beamThickness;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 }
 
@@ -497,20 +831,49 @@ class OrbitalLiturgyBehaviour extends BehaviourBase {
     }
 
     const alpha = Math.max(0.2, 1 - this.orbitVisual.progress * 0.35);
+    const weaponSheet = getWeaponIconsSheetImage();
+    const isUnholy = this.weaponId === "unholy_vespers";
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(
-      this.orbitVisual.x,
-      this.orbitVisual.y,
-      this.orbitVisual.radius,
-      0,
-      Math.PI * 2,
-    );
-    ctx.fillStyle = `rgba(255, 215, 120, ${alpha * 0.55})`;
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = `rgba(255, 245, 200, ${alpha})`;
-    ctx.stroke();
+    if (weaponSheet !== null) {
+      const rect = isUnholy ? NOCTURNE_TOME_RECT : ORBITING_TOME_RECT;
+      const angle = this.orbitPhaseRad + this.orbitVisual.progress * Math.PI * 2.3;
+      const drawSize = this.orbitVisual.radius * 2.25;
+      ctx.translate(this.orbitVisual.x, this.orbitVisual.y);
+      ctx.rotate(angle);
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(
+        weaponSheet,
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        -drawSize / 2,
+        -drawSize / 2,
+        drawSize,
+        drawSize,
+      );
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.beginPath();
+      ctx.arc(0, 0, this.orbitVisual.radius * 0.9, 0, Math.PI * 2);
+      ctx.fillStyle = isUnholy
+        ? `rgba(176, 132, 255, ${alpha * 0.32})`
+        : `rgba(255, 218, 128, ${alpha * 0.3})`;
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(
+        this.orbitVisual.x,
+        this.orbitVisual.y,
+        this.orbitVisual.radius,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fillStyle = `rgba(255, 215, 120, ${alpha * 0.55})`;
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = `rgba(255, 245, 200, ${alpha})`;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
@@ -540,6 +903,7 @@ class WardingAuraBehaviour extends BehaviourBase {
   private lastPlayerX = 0;
   private lastPlayerY = 0;
   private lastAuraRadius = 0;
+  private pulsePhase = 0;
 
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     this.lastPlayerX = ctx.playerOriginX;
@@ -574,6 +938,13 @@ class WardingAuraBehaviour extends BehaviourBase {
       "#7fe0a8",
       0.9 + merged.areaMultiplier * 0.08,
     );
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + Math.cos(this.pulsePhase) * (this.lastAuraRadius * 0.42),
+      ctx.playerOriginY + Math.sin(this.pulsePhase) * (this.lastAuraRadius * 0.42),
+      "#9cf0ba",
+      0.58 + merged.areaMultiplier * 0.04,
+    );
+    this.pulsePhase += 0.72;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -584,12 +955,18 @@ class WardingAuraBehaviour extends BehaviourBase {
       ctx.beginPath();
       ctx.arc(this.lastPlayerX, this.lastPlayerY, this.lastAuraRadius, 0, Math.PI * 2);
       
-      ctx.fillStyle = "rgba(180, 255, 120, 0.15)";
+      ctx.fillStyle = "rgba(180, 255, 120, 0.09)";
       ctx.fill();
       
       const pulse = (Math.sin(Date.now() / 150) + 1) / 2;
-      ctx.strokeStyle = `rgba(180, 255, 120, ${0.2 + 0.3 * pulse})`;
+      ctx.strokeStyle = `rgba(180, 255, 120, ${0.14 + 0.22 * pulse})`;
       ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(this.lastPlayerX, this.lastPlayerY, this.lastAuraRadius * 0.62, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(170, 240, 140, ${0.08 + 0.12 * pulse})`;
+      ctx.lineWidth = 1.2;
       ctx.stroke();
       
       ctx.restore();
@@ -610,6 +987,7 @@ interface PoolVisual {
 
 class ConsecratedPoolBehaviour extends BehaviourBase {
   private pools: PoolVisual[] = [];
+  private dropPhase = 0;
 
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     for (let i = this.pools.length - 1; i >= 0; i--) {
@@ -658,7 +1036,14 @@ class ConsecratedPoolBehaviour extends BehaviourBase {
       );
 
       ctx.spawnSkillBurst(cx, cy, "#89a6ff", 0.95);
+      ctx.spawnSkillBurst(
+        cx + Math.cos(this.dropPhase + d) * (poolRadius * 0.2),
+        cy + Math.sin(this.dropPhase + d) * (poolRadius * 0.14),
+        "#b8cbff",
+        0.62,
+      );
     }
+    this.dropPhase += 0.57;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -667,12 +1052,32 @@ class ConsecratedPoolBehaviour extends BehaviourBase {
     for (const pool of this.pools) {
       const alpha = Math.max(0, pool.ttlMs / pool.maxTtlMs);
       ctx.save();
+
+      const sheet = getVfxMediumSheetImage();
+      if (sheet !== null) {
+        const pulse = 0.92 + Math.sin((1 - alpha) * Math.PI * 1.6) * 0.08;
+        const w = pool.radius * 2.2 * pulse;
+        const h = pool.radius * 1.45 * pulse;
+        ctx.globalAlpha = alpha * 0.48;
+        ctx.drawImage(
+          sheet,
+          RITUAL_WAVE_RECT.x,
+          RITUAL_WAVE_RECT.y,
+          RITUAL_WAVE_RECT.w,
+          RITUAL_WAVE_RECT.h,
+          pool.x - w / 2,
+          pool.y - h / 2,
+          w,
+          h,
+        );
+      }
+
       ctx.beginPath();
       ctx.ellipse(pool.x, pool.y, pool.radius, pool.radius * 0.6, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(100, 150, 255, ${alpha * 0.4})`;
+      ctx.fillStyle = `rgba(100, 150, 255, ${alpha * 0.28})`;
       ctx.fill();
       ctx.lineWidth = 2;
-      ctx.strokeStyle = `rgba(150, 200, 255, ${alpha * 0.8})`;
+      ctx.strokeStyle = `rgba(150, 200, 255, ${alpha * 0.62})`;
       ctx.stroke();
       ctx.restore();
     }
@@ -680,6 +1085,8 @@ class ConsecratedPoolBehaviour extends BehaviourBase {
 }
 
 class RuneTracerBehaviour extends BehaviourBase {
+  private pulsePhase = 0;
+
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     this.regressCadence(ctx.dtMs);
     if (this.cadenceRemainMs > 0) {
@@ -716,7 +1123,14 @@ class RuneTracerBehaviour extends BehaviourBase {
       Math.max(2, hitsAllowed),
     );
 
-    ctx.spawnSkillBurst(ctx.playerOriginX + dirX * 16, ctx.playerOriginY + dirY * 16, "#c892ff", 0.95);
+    ctx.spawnSkillBurst(ctx.playerOriginX + dirX * 16, ctx.playerOriginY + dirY * 16, "#c892ff", 0.9);
+    ctx.spawnSkillBurst(
+      ctx.playerOriginX + dirX * 22 + Math.cos(this.pulsePhase) * 4,
+      ctx.playerOriginY + dirY * 22 + Math.sin(this.pulsePhase) * 4,
+      "#e1b6ff",
+      0.58,
+    );
+    this.pulsePhase += 0.86;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
@@ -726,12 +1140,14 @@ interface LightningVisual {
   x: number;
   y: number;
   radius: number;
+  phase: number;
   ttlMs: number;
   maxTtlMs: number;
 }
 
 class LightningNovaBehaviour extends BehaviourBase {
   private strikes: LightningVisual[] = [];
+  private phase = 0;
 
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     for (let i = this.strikes.length - 1; i >= 0; i--) {
@@ -761,6 +1177,7 @@ class LightningNovaBehaviour extends BehaviourBase {
         x: prey.x,
         y: prey.y,
         radius,
+        phase: this.phase + s * 0.7,
         ttlMs: 250,
         maxTtlMs: 250,
       });
@@ -776,28 +1193,83 @@ class LightningNovaBehaviour extends BehaviourBase {
 
       ctx.spawnSkillBurst(prey.x, prey.y, "#7fe0ff", 1.0);
     }
+    this.phase += 0.8;
 
     this.cadenceRemainMs = merged.cooldownMs;
   }
 
   renderWorld(ctx: CanvasRenderingContext2D): void {
+    const sheet = getVfxMediumSheetImage();
     for (const strike of this.strikes) {
-      const alpha = Math.max(0, strike.ttlMs / strike.maxTtlMs);
+      const life = Math.max(0, strike.ttlMs / strike.maxTtlMs);
+      const alpha = life;
+      const progress = 1 - life;
       ctx.save();
-      
+
+      if (sheet !== null) {
+        const size = strike.radius * 2.15;
+        ctx.globalAlpha = alpha * 0.44;
+        ctx.drawImage(
+          sheet,
+          HOLY_RING_RECT.x,
+          HOLY_RING_RECT.y,
+          HOLY_RING_RECT.w,
+          HOLY_RING_RECT.h,
+          strike.x - size / 2,
+          strike.y - size / 2,
+          size,
+          size,
+        );
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.fillStyle = "rgba(166, 232, 255, 0.42)";
+        ctx.fillRect(strike.x - size / 2, strike.y - size / 2, size, size);
+      }
+
+      ctx.globalCompositeOperation = "source-over";
       ctx.beginPath();
       ctx.arc(strike.x, strike.y, strike.radius, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(100, 255, 255, ${alpha * 0.2})`;
+      ctx.fillStyle = `rgba(100, 245, 255, ${alpha * 0.16})`;
       ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = `rgba(200, 255, 255, ${alpha * 0.8})`;
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = `rgba(206, 246, 255, ${alpha * 0.82})`;
       ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(strike.x, strike.y, strike.radius * (0.58 + progress * 0.1), 0, Math.PI * 2);
+      ctx.lineWidth = 1.15;
+      ctx.strokeStyle = `rgba(184, 236, 255, ${alpha * 0.66})`;
+      ctx.stroke();
+
+      const beamLen = strike.radius * 0.86;
+      const beamThickness = 1.4 + alpha * 1.2;
+      const dirs = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+      ];
+      for (let i = 0; i < dirs.length; i += 1) {
+        const dir = dirs[i];
+        if (dir === undefined) {
+          continue;
+        }
+        const wave = Math.sin(strike.phase + progress * 1.1 + i * (Math.PI / 2)) * 3.4;
+        ctx.beginPath();
+        ctx.moveTo(strike.x, strike.y);
+        ctx.lineTo(
+          strike.x + dir.x * beamLen + dir.y * wave,
+          strike.y + dir.y * beamLen - dir.x * wave,
+        );
+        ctx.strokeStyle = `rgba(216, 252, 255, ${alpha * 0.72})`;
+        ctx.lineWidth = beamThickness;
+        ctx.stroke();
+      }
 
       ctx.beginPath();
       ctx.moveTo(strike.x, strike.y - 800);
       ctx.lineTo(strike.x, strike.y);
-      ctx.lineWidth = 12 * alpha;
-      ctx.strokeStyle = `rgba(200, 255, 255, ${alpha})`;
+      ctx.lineWidth = 8 * alpha;
+      ctx.strokeStyle = `rgba(200, 246, 255, ${alpha * 0.88})`;
       ctx.stroke();
 
       ctx.restore();
@@ -809,6 +1281,12 @@ interface SigilNovaVisual {
   x: number;
   y: number;
   radius: number;
+  shardSeeds: Array<{
+    angle: number;
+    distNorm: number;
+    speedNorm: number;
+    sizeNorm: number;
+  }>;
   ttlMs: number;
   maxTtlMs: number;
 }
@@ -837,6 +1315,7 @@ class SigilNovaBehaviour extends BehaviourBase {
       x: ctx.playerOriginX,
       y: ctx.playerOriginY,
       radius: screenClearRadius,
+      shardSeeds: this.buildShardSeeds(),
       ttlMs: 400,
       maxTtlMs: 400,
     });
@@ -861,23 +1340,97 @@ class SigilNovaBehaviour extends BehaviourBase {
     for (const shock of this.shocks) {
       const p = 1 - Math.max(0, shock.ttlMs / shock.maxTtlMs);
       const alpha = 1 - p;
-      
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(shock.x, shock.y, shock.radius, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 50, 80, ${alpha * 0.5})`;
-    ctx.fill();
-    ctx.lineWidth = 15;
-    ctx.strokeStyle = `rgba(255, 200, 50, ${alpha * 0.8})`;
-    ctx.stroke();
+      const revealWindow = 0.42;
+      const shatterProgress = Math.max(0, (p - revealWindow) / (1 - revealWindow));
 
-      ctx.beginPath();
-      ctx.arc(shock.x, shock.y, shock.radius * 0.28, 0, Math.PI * 2);
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.7})`;
-      ctx.stroke();
+      ctx.save();
+      ctx.translate(shock.x, shock.y);
+
+      // Stage 1: ritual symbol reveals briefly.
+      if (p <= revealWindow) {
+        const revealT = p / revealWindow;
+        const sigilAlpha = Math.min(1, revealT * 1.45) * alpha;
+        const spin = revealT * 0.24;
+        ctx.rotate(spin);
+
+        ctx.beginPath();
+        ctx.arc(0, 0, shock.radius * 0.52, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(242, 250, 255, ${sigilAlpha * 0.72})`;
+        ctx.lineWidth = 6.5;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, shock.radius * 0.34, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(212, 236, 255, ${sigilAlpha * 0.62})`;
+        ctx.lineWidth = 3.2;
+        ctx.stroke();
+
+        // 8-point sigil star
+        for (let i = 0; i < 8; i += 1) {
+          const theta = (Math.PI * 2 * i) / 8;
+          const outerR = shock.radius * 0.44;
+          const innerR = shock.radius * 0.19;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(theta) * innerR, Math.sin(theta) * innerR);
+          ctx.lineTo(Math.cos(theta) * outerR, Math.sin(theta) * outerR);
+          ctx.strokeStyle = `rgba(232, 247, 255, ${sigilAlpha * 0.68})`;
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+        }
+      } else {
+        // Stage 2: symbol shatters like glass fragments.
+        const shardAlpha = (1 - shatterProgress) * alpha;
+
+        // Expanding crack ring remnants
+        ctx.beginPath();
+        ctx.arc(0, 0, shock.radius * (0.44 + shatterProgress * 0.28), 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(225, 244, 255, ${shardAlpha * 0.52})`;
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+
+        for (const seed of shock.shardSeeds) {
+          const travel = shock.radius * (0.12 + seed.distNorm * 0.3 + shatterProgress * (0.65 + seed.speedNorm * 0.7));
+          const cx = Math.cos(seed.angle) * travel;
+          const cy = Math.sin(seed.angle) * travel;
+          const tangent = seed.angle + Math.PI / 2;
+          const shardLen = shock.radius * (0.03 + seed.sizeNorm * 0.055) * (1 - shatterProgress * 0.28);
+          const shardWidth = Math.max(1.2, shardLen * 0.18);
+
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(tangent + shatterProgress * (0.2 + seed.speedNorm * 0.35));
+          ctx.beginPath();
+          ctx.moveTo(-shardLen * 0.5, 0);
+          ctx.lineTo(shardLen * 0.5, 0);
+          ctx.strokeStyle = `rgba(239, 251, 255, ${shardAlpha * 0.75})`;
+          ctx.lineWidth = Math.max(1, shardWidth * 0.86);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(-shardLen * 0.2, -shardLen * 0.26);
+          ctx.lineTo(shardLen * 0.22, shardLen * 0.26);
+          ctx.strokeStyle = `rgba(182, 222, 250, ${shardAlpha * 0.36})`;
+          ctx.lineWidth = Math.max(0.7, shardWidth * 0.34);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
       ctx.restore();
     }
+  }
+
+  private buildShardSeeds(): SigilNovaVisual["shardSeeds"] {
+    const seeds: SigilNovaVisual["shardSeeds"] = [];
+    const count = 26;
+    for (let i = 0; i < count; i += 1) {
+      seeds.push({
+        angle: (Math.PI * 2 * i) / count + Math.random() * 0.16,
+        distNorm: 0.2 + Math.random() * 0.8,
+        speedNorm: Math.random(),
+        sizeNorm: Math.random(),
+      });
+    }
+    return seeds;
   }
 }
 
@@ -896,6 +1449,7 @@ function spawnDirectedBolt(
   }
 
   ctx.spawnDirectedProjectile({
+    sourceWeaponId: data.id,
     originX: ctx.playerOriginX,
     originY: ctx.playerOriginY,
     dirX,

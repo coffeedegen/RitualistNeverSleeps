@@ -1,0 +1,1 @@
+{"image":"public/assets/vfx/vfx_medium_atlas.png","cell":{"w":192,"h":192},"grid":{"cols":4,"rows":1},"sprites":[{"id":"warding_aura_fx","x":0,"y":0,"w":192,"h":192},{"id":"life_drain_fx","x":192,"y":0,"w":192,"h":192},{"id":"lash_strip_fx","x":384,"y":0,"w":192,"h":192},{"id":"ritual_wave_fx","x":576,"y":0,"w":192,"h":192}]}

@@ -1,0 +1,1 @@
+{"image":"public/assets/vfx/vfx_small_atlas.png","cell":{"w":96,"h":96},"grid":{"cols":4,"rows":1},"sprites":[{"id":"hit_spark","x":0,"y":0,"w":96,"h":96},{"id":"death_puff","x":96,"y":0,"w":96,"h":96},{"id":"pickup_glow","x":192,"y":0,"w":96,"h":96},{"id":"elite_aura","x":288,"y":0,"w":96,"h":96}]}

@@ -1,5 +1,6 @@
 import { requirePassive } from "../data/passives";
 import type { SurvivorPassiveSnapshot } from "../data/passives";
+import { getWeaponEvolutionRule } from "../data/weaponEvolutions";
 import { BASE_WEAPON_INVENTORY_IDS, requireWeapon } from "../data/weapons";
 import {
   INITIAL_WHIP_WEAPON_LEVEL,
@@ -13,6 +14,7 @@ import {
 export const MAX_WEAPON_SLOTS = 6;
 
 export const MAX_PASSIVE_SLOTS = 6;
+const PLAYER_HURT_ANIMATION_MS = 180;
 
 export interface WeaponLane {
   id: string;
@@ -41,6 +43,8 @@ export class Player {
   hp = PLAYER_START_MAX_HP;
 
   invulnerabilityMs = 0;
+
+  hurtAnimationMs = 0;
 
   moveSpeed = PLAYER_BASE_MOVE_SPEED;
 
@@ -112,7 +116,11 @@ export class Player {
    */
   update(dtMs: number, axes: { x: number; y: number }): void {
     if (this.invulnerabilityMs > 0) {
-      this.invulnerabilityMs -= dtMs;
+      this.invulnerabilityMs = Math.max(0, this.invulnerabilityMs - dtMs);
+    }
+
+    if (this.hurtAnimationMs > 0) {
+      this.hurtAnimationMs = Math.max(0, this.hurtAnimationMs - dtMs);
     }
 
     const seconds = dtMs / 1000;
@@ -135,6 +143,7 @@ export class Player {
     const damage = Math.max(1, Math.floor(rawDamage) - this.armorFlat);
     this.hp -= damage;
     this.invulnerabilityMs = 500; // Half a second of i-frames
+    this.hurtAnimationMs = PLAYER_HURT_ANIMATION_MS;
 
     if (this.hp < 0) {
       this.hp = 0;
@@ -197,10 +206,8 @@ export class Player {
     }
 
     const blueprint = requireWeapon(baseWeaponId);
-    if (
-      blueprint.evolutionId === undefined ||
-      blueprint.passiveRequirement === undefined
-    ) {
+    const evolutionRule = getWeaponEvolutionRule(baseWeaponId);
+    if (evolutionRule === undefined) {
       return false;
     }
 
@@ -209,13 +216,15 @@ export class Player {
       return false;
     }
 
-    if (!this.passiveMeetsRequirement(blueprint.passiveRequirement, 1)) {
-      return false;
+    for (const passiveId of evolutionRule.catalystPassiveIds) {
+      if (!this.passiveMeetsRequirement(passiveId, 1)) {
+        return false;
+      }
     }
 
-    requireWeapon(blueprint.evolutionId);
+    requireWeapon(evolutionRule.evolvedWeaponId);
 
-    lane.id = blueprint.evolutionId;
+    lane.id = evolutionRule.evolvedWeaponId;
     lane.level = 1;
     return true;
   }

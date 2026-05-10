@@ -8,6 +8,9 @@ export const CHECKER_TILE_SIZE_PX = 64;
 export const CANVAS_DEFAULT_WIDTH_PX = 960;
 export const CANVAS_DEFAULT_HEIGHT_PX = 540;
 
+/** Gameplay camera zoom multiplier (`2` = 200% zoom-in). */
+export const GAMEPLAY_CAMERA_ZOOM = 2;
+
 /** Player baseline move speed in world units per second. */
 export const PLAYER_BASE_MOVE_SPEED = 240;
 

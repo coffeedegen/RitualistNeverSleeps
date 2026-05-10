@@ -1,5 +1,27 @@
 import { CANVAS_DEFAULT_HEIGHT_PX, CANVAS_DEFAULT_WIDTH_PX } from "./constants";
 
+type PixelArtContext = CanvasRenderingContext2D & {
+  mozImageSmoothingEnabled?: boolean;
+  msImageSmoothingEnabled?: boolean;
+  webkitImageSmoothingEnabled?: boolean;
+};
+
+export function applyPixelArtRendering(
+  ctx: CanvasRenderingContext2D,
+  canvas?: HTMLCanvasElement,
+): void {
+  const pixelCtx = ctx as PixelArtContext;
+  pixelCtx.imageSmoothingEnabled = false;
+  pixelCtx.imageSmoothingQuality = "low";
+  pixelCtx.mozImageSmoothingEnabled = false;
+  pixelCtx.msImageSmoothingEnabled = false;
+  pixelCtx.webkitImageSmoothingEnabled = false;
+
+  if (canvas !== undefined) {
+    canvas.style.imageRendering = "pixelated";
+  }
+}
+
 /**
  * Resizes the canvas backing store to match display size × device pixel ratio.
  * Applies `ctx.scale(dpr, dpr)` so drawing uses CSS pixel coordinates.
@@ -21,7 +43,7 @@ export function resizeCanvasToDisplaySize(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext("2d");
   if (ctx !== null) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = false;
+    applyPixelArtRendering(ctx, canvas);
   }
 }
 

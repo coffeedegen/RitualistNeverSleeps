@@ -6,11 +6,13 @@ import {
   ENEMY_SPAWN_INTERVAL_MS,
   ENEMY_SPAWN_OUTSIDE_PADDING_PX,
 } from "../utils/constants";
+import type { WorldRect } from "../world/generatedTilemap";
 
 export interface EnemySpawnDeps {
   camera: Camera;
   elapsedMs: number;
   frozenUntilMs: number;
+  spawnLanes: WorldRect[];
   /** Survivor-linked curse scaler (`1 + passive curse pct`). */
   cursePressureMultiplier: number;
   /** Hook into {@link WaveDirector} / bespoke wave timelines. */
@@ -54,6 +56,7 @@ export class EnemySpawner {
 
     const { x, y } = pickOutsideViewportSpawn(
       deps.camera,
+      deps.spawnLanes,
       ENEMY_SPAWN_OUTSIDE_PADDING_PX,
       this.rng,
     );
@@ -69,29 +72,40 @@ export class EnemySpawner {
 
 function pickOutsideViewportSpawn(
   camera: Camera,
+  spawnLanes: WorldRect[],
   paddingWorld: number,
   rng: Pick<Math, "random">,
 ): { x: number; y: number } {
   const halfW = camera.viewportWidthCss * 0.5 + paddingWorld;
   const halfH = camera.viewportHeightCss * 0.5 + paddingWorld;
+  const viewMinX = camera.x - halfW;
+  const viewMaxX = camera.x + halfW;
+  const viewMinY = camera.y - halfH;
+  const viewMaxY = camera.y + halfH;
 
-  const minX = camera.x - halfW;
-  const maxX = camera.x + halfW;
-  const minY = camera.y - halfH;
-  const maxY = camera.y + halfH;
-
-  const edge = Math.floor(rng.random() * 4);
-
-  switch (edge) {
-    case 0:
-      return { x: randomRangeInclusiveEdge(rng, minX, maxX), y: minY };
-    case 1:
-      return { x: randomRangeInclusiveEdge(rng, minX, maxX), y: maxY };
-    case 2:
-      return { x: minX, y: randomRangeInclusiveEdge(rng, minY, maxY) };
-    default:
-      return { x: maxX, y: randomRangeInclusiveEdge(rng, minY, maxY) };
+  const lanes = spawnLanes.length > 0
+    ? spawnLanes
+    : [{ minX: camera.x - halfW, maxX: camera.x + halfW, minY: camera.y - halfH, maxY: camera.y + halfH }];
+  const fallbackLane = lanes[0];
+  if (fallbackLane === undefined) {
+    return { x: camera.x, y: camera.y };
   }
+
+  for (let attempts = 0; attempts < 24; attempts += 1) {
+    const lane = lanes[Math.floor(rng.random() * lanes.length)] ?? fallbackLane;
+    const x = randomRangeInclusiveEdge(rng, lane.minX, lane.maxX);
+    const y = randomRangeInclusiveEdge(rng, lane.minY, lane.maxY);
+    const outsideViewport = x < viewMinX || x > viewMaxX || y < viewMinY || y > viewMaxY;
+    if (outsideViewport) {
+      return { x, y };
+    }
+  }
+
+  const lane = lanes[Math.floor(rng.random() * lanes.length)] ?? fallbackLane;
+  return {
+    x: randomRangeInclusiveEdge(rng, lane.minX, lane.maxX),
+    y: randomRangeInclusiveEdge(rng, lane.minY, lane.maxY),
+  };
 }
 
 function randomRangeInclusiveEdge(

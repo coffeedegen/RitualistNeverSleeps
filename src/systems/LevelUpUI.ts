@@ -1,10 +1,12 @@
 import { LEVEL_CARD_OFFER_COUNT } from "../utils/constants";
+import { SpriteRegistry } from "../render/SpriteRegistry";
 
 export interface SurvivorLevelCardOffer {
   title: string;
   effect: string;
   details?: string;
   accent: string;
+  iconSpriteId?: string;
   /** Applies the perk after the survivor selects this row. */
   applySelection: () => void;
 }
@@ -28,6 +30,9 @@ export class LevelUpUI {
   private overlayActive = false;
 
   private draftedCards: SurvivorLevelCardOffer[] = [];
+  private readonly sprites = new SpriteRegistry();
+  private spriteReady = false;
+  private readonly iconScratch = document.createElement("canvas");
 
   private readonly keyboardListener = (event: KeyboardEvent): void => {
     if (!this.overlayActive) {
@@ -90,6 +95,7 @@ export class LevelUpUI {
   ) {
     window.addEventListener("keydown", this.keyboardListener, true);
     window.addEventListener("mousedown", this.clickListener, true);
+    void this.primeSprites();
   }
 
   /** Tear down listeners (hot reload disposal). */
@@ -143,19 +149,24 @@ export class LevelUpUI {
     this.drawBackdropRings(ctx, width, height);
     this.drawBackdropSigils(ctx, width, height);
 
+    const compactHeader = height < 720 || width < 980;
     ctx.fillStyle = "#fdf7ff";
-    ctx.font = "900 35px 'Cinzel', 'Times New Roman', serif";
+    ctx.font = compactHeader
+      ? "900 40px 'Cinzel', 'Times New Roman', serif"
+      : "900 52px 'Cinzel', 'Times New Roman', serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText("LEVEL UP", width * 0.5, height * 0.15);
+    ctx.fillText("LEVEL UP", width * 0.5, compactHeader ? Math.max(92, height * 0.13) : Math.max(126, height * 0.15));
 
-    ctx.font = "600 12px 'Inter', system-ui, sans-serif";
-    ctx.fillStyle = "rgba(239, 225, 232, 0.82)";
-    ctx.fillText("Choose one blessing to continue the ritual.", width * 0.5, height * 0.2);
+    if (!compactHeader) {
+      ctx.font = "700 14px 'Inter', system-ui, sans-serif";
+      ctx.fillStyle = "rgba(239, 225, 232, 0.82)";
+      ctx.fillText("Choose one blessing to continue the ritual.", width * 0.5, Math.max(168, height * 0.205));
 
-    ctx.font = "700 10px 'JetBrains Mono', monospace";
-    ctx.fillStyle = "rgba(255, 185, 205, 0.78)";
-    ctx.fillText("PRESS 1 - 3 OR CLICK A CARD", width * 0.5, height * 0.235);
+      ctx.font = "700 11px 'JetBrains Mono', monospace";
+      ctx.fillStyle = "rgba(255, 185, 205, 0.78)";
+      ctx.fillText("PRESS 1 - 3 OR CLICK A CARD", width * 0.5, Math.max(198, height * 0.235));
+    }
 
     const layout = this.getLayout(width, height);
 
@@ -183,101 +194,230 @@ export class LevelUpUI {
     index: number,
   ): void {
     const { x, y, w, h } = rect;
-    const accentGlow = this.mixAccent(entry.accent, 0.42);
-    const accentFaint = this.mixAccent(entry.accent, 0.14);
-
     const isCenterCard = index === 1 && this.draftedCards.length === 3;
-    const inset = isCenterCard ? 1 : 0;
-    const radius = isCenterCard ? 12 : 10;
+    const radius = 16;
     const fillGradient = ctx.createLinearGradient(x, y, x, y + h);
-    fillGradient.addColorStop(0, isCenterCard ? "rgba(33, 14, 22, 0.99)" : "rgba(16, 11, 21, 0.97)");
-    fillGradient.addColorStop(1, "rgba(6, 6, 10, 0.99)");
-
+    fillGradient.addColorStop(0, isCenterCard ? "rgba(40, 15, 30, 0.98)" : "rgba(16, 11, 21, 0.97)");
+    fillGradient.addColorStop(1, "rgba(7, 7, 12, 0.99)");
     ctx.fillStyle = fillGradient;
-    this.roundPane(ctx, x + inset, y + inset, w - inset * 2, h - inset * 2, radius);
+    this.roundPane(ctx, x, y, w, h, radius);
     ctx.fill();
 
-    ctx.strokeStyle = accentGlow;
-    ctx.lineWidth = isCenterCard ? 3.75 : 2.2;
-    this.roundPane(ctx, x + inset, y + inset, w - inset * 2, h - inset * 2, radius);
+    ctx.strokeStyle = this.mixAccent(entry.accent, isCenterCard ? 0.6 : 0.44);
+    ctx.lineWidth = isCenterCard ? 3.2 : 2.4;
+    this.roundPane(ctx, x, y, w, h, radius);
     ctx.stroke();
 
-    ctx.strokeStyle = accentFaint;
+    ctx.strokeStyle = this.mixAccent(entry.accent, 0.2);
     ctx.lineWidth = 1;
-    this.roundPane(ctx, x + 5, y + 5, w - 10, h - 10, isCenterCard ? 10 : 8);
+    this.roundPane(ctx, x + 6, y + 6, w - 12, h - 12, radius - 5);
     ctx.stroke();
 
-    const topBand = ctx.createLinearGradient(x, y, x + w, y);
-    topBand.addColorStop(0, this.withAlpha(entry.accent, 0.84));
-    topBand.addColorStop(0.5, isCenterCard ? "rgba(255, 231, 149, 0.68)" : "rgba(255,255,255,0.22)");
-    topBand.addColorStop(1, this.withAlpha(entry.accent, 0.84));
-    ctx.fillStyle = topBand;
-    this.roundPane(ctx, x + inset, y + inset, w - inset * 2, 6, radius);
-    ctx.fill();
+    const padX = Math.max(20, Math.floor(w * 0.07));
+    const padTop = Math.max(18, Math.floor(h * 0.045));
+    const padBottom = Math.max(18, Math.floor(h * 0.05));
+    let sectionGap = Math.max(8, Math.floor(h * 0.02));
+    const contentX = x + padX;
+    const contentY = y + padTop;
+    const contentW = w - padX * 2;
+    const contentH = h - padTop - padBottom;
 
-    ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
-    this.roundPane(ctx, x + 14, y + 18, w - 28, h - 30, radius - 6);
-    ctx.fill();
+    let titleZoneH = Math.floor(contentH * 0.2);
+    let iconZoneH = Math.floor(contentH * 0.31);
+    let effectZoneH = Math.floor(contentH * 0.22);
+    let detailsZoneH = contentH - titleZoneH - iconZoneH - effectZoneH - sectionGap * 3;
 
-    ctx.save();
-    ctx.fillStyle = this.withAlpha(entry.accent, 0.18);
-    ctx.beginPath();
-    ctx.arc(x + w - 38, y + 38, isCenterCard ? 22 : 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const minTitleZoneH = Math.max(40, Math.floor(contentH * 0.14));
+    const minIconZoneH = Math.max(56, Math.floor(contentH * 0.2));
+    const minEffectZoneH = Math.max(46, Math.floor(contentH * 0.16));
+    const minDetailsZoneH = Math.max(42, Math.floor(contentH * 0.2));
 
-    ctx.fillStyle = this.withAlpha(entry.accent, 0.9);
-    ctx.font = isCenterCard ? "800 17px 'Space Grotesk', 'Segoe UI', sans-serif" : "800 16px 'Space Grotesk', 'Segoe UI', sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`${index + 1}`, x + w - 38, y + 36);
+    if (detailsZoneH < minDetailsZoneH) {
+      let deficit = minDetailsZoneH - detailsZoneH;
 
-    ctx.fillStyle = "rgba(255,255,255,0.62)";
-    ctx.font = "700 9px 'JetBrains Mono', monospace";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText("RITE", x + 30, y + 24);
+      const iconTrim = Math.min(deficit, Math.max(0, iconZoneH - minIconZoneH));
+      iconZoneH -= iconTrim;
+      deficit -= iconTrim;
 
-    ctx.fillStyle = "#f9fbff";
-    ctx.font = isCenterCard ? "700 19px 'Space Grotesk', 'Segoe UI', sans-serif" : "700 18px 'Space Grotesk', 'Segoe UI', sans-serif";
-    drawTextBlock(ctx, entry.title, x + w * 0.5, y + 46, w - 72, 20, 2, "center");
+      const effectTrim = Math.min(deficit, Math.max(0, effectZoneH - minEffectZoneH));
+      effectZoneH -= effectTrim;
+      deficit -= effectTrim;
 
-    const effectLabelY = y + 88;
-    ctx.fillStyle = this.withAlpha(entry.accent, 0.9);
-    ctx.font = "700 11px 'JetBrains Mono', monospace";
-    ctx.fillText("EFFECT", x + 32, effectLabelY);
+      const titleTrim = Math.min(deficit, Math.max(0, titleZoneH - minTitleZoneH));
+      titleZoneH -= titleTrim;
+      deficit -= titleTrim;
 
-    ctx.fillStyle = "rgba(245, 247, 255, 0.95)";
-    drawTextBlock(
-      ctx,
-      entry.effect,
-      x + 32,
-      effectLabelY + 13,
-      w - 64,
-      13,
-      2,
-      "left",
-    );
-    if (entry.details !== undefined && entry.details.length > 0) {
-      ctx.fillStyle = "rgba(240, 233, 240, 0.8)";
-      ctx.font = "600 10px 'Inter', system-ui, sans-serif";
-      ctx.fillText("DETAILS", x + 32, y + 148);
-      ctx.fillStyle = "rgba(229, 219, 224, 0.94)";
-      drawTextBlock(
-        ctx,
-        entry.details,
-        x + 32,
-        y + 160,
-        w - 64,
-        12,
-        2,
-        "left",
-      );
+      if (deficit > 0) {
+        const gapTrim = Math.min(deficit, Math.max(0, sectionGap - 6) * 3);
+        sectionGap -= Math.floor(gapTrim / 3);
+      }
+
+      detailsZoneH = contentH - titleZoneH - iconZoneH - effectZoneH - sectionGap * 3;
     }
 
-    ctx.fillStyle = "rgba(224, 208, 217, 0.76)";
-    ctx.font = "700 9px 'JetBrains Mono', monospace";
-    ctx.fillText(isCenterCard ? "CROWN OPTION" : "CHOOSE WISELY", x + 32, y + h - 12);
+    const skillName = this.extractSkillName(entry.title);
+    const normalizedTitle = `Take ${skillName}`;
+    const titleCenterX = contentX + contentW * 0.5;
+    ctx.fillStyle = "#f7fbff";
+    ctx.font = "700 16px 'Space Grotesk', 'Segoe UI', sans-serif";
+    ctx.textBaseline = "alphabetic";
+    drawCenteredTextInZone(
+      ctx,
+      normalizedTitle,
+      titleCenterX,
+      contentY,
+      titleZoneH,
+      Math.floor(contentW * 0.96),
+      19,
+      2,
+    );
+
+    const iconZoneTop = contentY + titleZoneH + sectionGap;
+    const iconWrapSize = Math.max(
+      92,
+      Math.min(Math.floor(contentW * 0.48), Math.floor(iconZoneH * 0.9)),
+    );
+    const iconWrapX = Math.floor(contentX + (contentW - iconWrapSize) * 0.5);
+    const iconWrapY = Math.floor(iconZoneTop + (iconZoneH - iconWrapSize) * 0.5);
+    const iconAccent = this.resolveIconAccent(entry);
+
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    this.roundPane(ctx, iconWrapX, iconWrapY, iconWrapSize, iconWrapSize, 14);
+    ctx.fill();
+    const iconGlow = ctx.createRadialGradient(
+      iconWrapX + iconWrapSize * 0.5,
+      iconWrapY + iconWrapSize * 0.44,
+      iconWrapSize * 0.1,
+      iconWrapX + iconWrapSize * 0.5,
+      iconWrapY + iconWrapSize * 0.5,
+      iconWrapSize * 0.8,
+    );
+    iconGlow.addColorStop(0, this.withAlpha(iconAccent, 0.2));
+    iconGlow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = iconGlow;
+    this.roundPane(ctx, iconWrapX + 2, iconWrapY + 2, iconWrapSize - 4, iconWrapSize - 4, 12);
+    ctx.fill();
+    ctx.strokeStyle = this.withAlpha(iconAccent, 0.52);
+    ctx.lineWidth = 1.8;
+    this.roundPane(ctx, iconWrapX, iconWrapY, iconWrapSize, iconWrapSize, 14);
+    ctx.stroke();
+    ctx.strokeStyle = this.withAlpha(iconAccent, 0.18);
+    ctx.lineWidth = 1;
+    this.roundPane(ctx, iconWrapX + 4, iconWrapY + 4, iconWrapSize - 8, iconWrapSize - 8, 11);
+    ctx.stroke();
+
+    this.drawOfferIconCentered(ctx, iconWrapX, iconWrapY, iconWrapSize, entry, iconAccent);
+
+    const effectZoneTop = iconZoneTop + iconZoneH + sectionGap;
+    const effectMaxWidth = Math.floor(contentW * 0.94);
+    ctx.fillStyle = "rgba(244, 247, 255, 0.97)";
+    ctx.font = "700 12px 'Inter', system-ui, sans-serif";
+    drawCenteredTextInZone(
+      ctx,
+      entry.effect,
+      contentX + contentW * 0.5,
+      effectZoneTop,
+      effectZoneH,
+      effectMaxWidth,
+      16,
+      4,
+    );
+
+    const detailsZoneTop = effectZoneTop + effectZoneH + sectionGap;
+    const detailsText = entry.details ?? "No additional details available.";
+    ctx.fillStyle = "rgba(214, 217, 228, 0.96)";
+    ctx.font = "600 11px 'JetBrains Mono', monospace";
+    drawCenteredTextInZone(
+      ctx,
+      detailsText,
+      contentX + contentW * 0.5,
+      detailsZoneTop,
+      detailsZoneH,
+      effectMaxWidth,
+      14,
+      5,
+    );
+  }
+
+  private async primeSprites(): Promise<void> {
+    await Promise.allSettled([
+      this.sprites.loadManifest("/assets/manifests/weapon_icons_64_atlas.json"),
+      this.sprites.loadManifest("/assets/manifests/passives_64_atlas.json"),
+      this.sprites.loadManifest("/assets/manifests/ui_icons_atlas.json"),
+    ]);
+    this.spriteReady = true;
+  }
+
+  private drawOfferIconCentered(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    boxSize: number,
+    entry: SurvivorLevelCardOffer,
+    accent: string,
+  ): void {
+    const iconSize = Math.floor(boxSize * 0.7); // 200% visual scale target vs old ~32px icon.
+    const iconX = Math.floor(x + (boxSize - iconSize) * 0.5);
+    const iconY = Math.floor(y + (boxSize - iconSize) * 0.5);
+    const spriteId = entry.iconSpriteId;
+    const drew = this.spriteReady
+      && spriteId !== undefined
+      && this.drawIsolatedSprite(ctx, spriteId, iconX, iconY, iconSize, iconSize);
+    if (!drew) {
+      ctx.fillStyle = this.withAlpha(accent, 0.9);
+      ctx.font = "800 24px 'Space Grotesk', sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("✦", x + boxSize / 2, y + boxSize / 2 + 1);
+    }
+  }
+
+  private drawIsolatedSprite(
+    ctx: CanvasRenderingContext2D,
+    spriteId: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): boolean {
+    const handle = this.sprites.getSprite(spriteId);
+    if (handle === undefined) {
+      return false;
+    }
+
+    const sourceW = Math.max(1, Math.floor(handle.rect.w));
+    const sourceH = Math.max(1, Math.floor(handle.rect.h));
+    if (this.iconScratch.width !== sourceW || this.iconScratch.height !== sourceH) {
+      this.iconScratch.width = sourceW;
+      this.iconScratch.height = sourceH;
+    }
+
+    const scratchCtx = this.iconScratch.getContext("2d");
+    if (scratchCtx === null) {
+      return false;
+    }
+
+    scratchCtx.setTransform(1, 0, 0, 1, 0, 0);
+    scratchCtx.imageSmoothingEnabled = false;
+    scratchCtx.clearRect(0, 0, sourceW, sourceH);
+
+    // Copy the exact source cell into an isolated buffer before scaling.
+    // This prevents neighboring packed icons from bleeding into the draw.
+    scratchCtx.drawImage(
+      handle.image,
+      Math.floor(handle.rect.x),
+      Math.floor(handle.rect.y),
+      sourceW,
+      sourceH,
+      0,
+      0,
+      sourceW,
+      sourceH,
+    );
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.iconScratch, 0, 0, sourceW, sourceH, x, y, w, h);
+    return true;
   }
 
   private resolveSelectionAt(index: number): void {
@@ -315,23 +455,41 @@ export class LevelUpUI {
   }
 
   private getLayout(width: number, height: number): LevelCardLayout {
-    const columns = 3;
-    const compact = width < 980 || height < 760;
-    const gapX = compact ? Math.max(12, Math.floor(width * 0.014)) : Math.max(20, Math.floor(width * 0.02));
-    const gapY = compact ? Math.max(12, Math.floor(height * 0.018)) : Math.max(16, Math.floor(height * 0.02));
-    const cardWidth = Math.min(
-      compact ? 292 : 388,
-      Math.max(compact ? 232 : 268, Math.floor((width - gapX * 4) / columns)),
-    );
-    const cardHeight = Math.min(
-      compact ? 238 : 278,
-      Math.max(compact ? 204 : 220, Math.floor(height * 0.38)),
-    );
-    const rowCount = Math.ceil(Math.max(1, this.draftedCards.length) / columns);
+    const cardCount = Math.max(1, this.draftedCards.length);
+    let columns = Math.min(3, cardCount);
+    if (columns === 3 && width < 1280) {
+      columns = 2;
+    }
+    if (columns >= 2 && width < 700) {
+      columns = 1;
+    }
+
+    const rowCount = Math.ceil(cardCount / columns);
+    const sidePad = Math.max(20, Math.floor(width * 0.035));
+    const gapX = Math.max(24, Math.min(56, Math.floor(width * 0.024)));
+    const gapY = Math.max(20, Math.floor(height * 0.026));
+    const availableW = width - sidePad * 2 - gapX * (columns - 1);
+    const cardWidth = Math.max(260, Math.floor(availableW / columns));
+    const compactHeader = height < 720 || width < 980;
+    const headerClearance = compactHeader
+      ? Math.max(104, Math.floor(height * 0.14))
+      : Math.max(220, Math.floor(height * 0.25));
+    const baseHeightRatio = rowCount > 1 ? 0.33 : 0.44;
+    let cardHeight = Math.max(rowCount > 1 ? 210 : 338, Math.min(472, Math.floor(height * baseHeightRatio)));
+    if (rowCount > 1) {
+      const maxByViewport = Math.floor(
+        (height - headerClearance - 22 - gapY * (rowCount - 1)) / rowCount,
+      );
+      cardHeight = Math.max(180, Math.min(cardHeight, maxByViewport));
+    }
     const totalWidth = columns * cardWidth + (columns - 1) * gapX;
     const totalHeight = rowCount * cardHeight + (rowCount - 1) * gapY;
-    const originX = Math.max(16, Math.floor((width - totalWidth) / 2));
-    const originY = Math.max(108, Math.floor(height * 0.24 - totalHeight * 0.06));
+    const originX = Math.max(sidePad, Math.floor((width - totalWidth) / 2));
+    const maxOriginY = Math.max(20, height - totalHeight - 22);
+    const preferredOriginY = compactHeader
+      ? Math.max(headerClearance, Math.floor(height * 0.16))
+      : Math.max(headerClearance, Math.floor(height * 0.275));
+    const originY = Math.max(20, Math.min(preferredOriginY, maxOriginY));
 
     return {
       cardWidth,
@@ -342,6 +500,16 @@ export class LevelUpUI {
       originY,
       columns,
     };
+  }
+
+  private extractSkillName(title: string): string {
+    const cleaned = title
+      .replace(/^take\s+/i, "")
+      .replace(/^upgrade\s+/i, "")
+      .replace(/^rank up\s+/i, "")
+      .replace(/^evolve\s*-\s*/i, "")
+      .trim();
+    return cleaned.length > 0 ? cleaned : "Unknown Blessing";
   }
 
   private getCardRect(
@@ -402,6 +570,54 @@ export class LevelUpUI {
     return this.withAlpha(hex, alpha);
   }
 
+  private resolveIconAccent(entry: SurvivorLevelCardOffer): string {
+    const spriteId = entry.iconSpriteId ?? "";
+    const accentBySpriteId: Record<string, string> = {
+      lash: "#ff7d8d",
+      crimson_lash: "#ff5a7a",
+      arcane_bolt: "#72b8ff",
+      sanctified_bolt: "#9fe1ff",
+      shard_blade: "#a9b8ff",
+      thousand_shards: "#d3dcff",
+      cleaver: "#ffb36c",
+      reaper_spiral: "#ff8f5c",
+      sanctum_cross: "#8cf3d1",
+      celestial_blade: "#cfe8ff",
+      orbiting_tome: "#b79bff",
+      nocturne_tome: "#9d83ff",
+      ember_wand: "#ff9664",
+      inferno_burst: "#ff6e59",
+      warding_aura: "#8eff86",
+      life_drain: "#63ff9d",
+      sanctified_tide: "#6fdcff",
+      deluge: "#55b9ff",
+      rune_shard: "#8bc0ff",
+      final_sigil: "#b8c7ff",
+      storm_ring: "#f7ee72",
+      tempest_loop: "#ffee8c",
+      sigil_nova: "#ff8bf0",
+      lunar_bloom: "#d6c6ff",
+      ironleaf: "#8cd46b",
+      bastion_plate: "#b9c2d0",
+      vessel_heart: "#66ffd4",
+      ruby_root: "#ff7d9b",
+      hollow_tome: "#89b2ff",
+      flare_lantern: "#82ffb1",
+      swiftband: "#ffd48a",
+      timeweave: "#c89bff",
+      echo_lens: "#91f5ff",
+      gale_wings: "#8edcff",
+      graviton_seed: "#78f0be",
+      fortune_leaf: "#8dffa0",
+      ascension_crown: "#ffd96a",
+      gilded_mask: "#d5ffd0",
+      hud_hp: "#ff7b8d",
+      hud_xp: "#79b8ff",
+    };
+
+    return accentBySpriteId[spriteId] ?? entry.accent;
+  }
+
   private withAlpha(hex: string, alpha: number): string {
     const normalized = hex.replace("#", "");
     if (normalized.length !== 6) {
@@ -415,29 +631,32 @@ export class LevelUpUI {
   }
 }
 
-function drawTextBlock(
+function drawCenteredTextInZone(
   ctx: CanvasRenderingContext2D,
   text: string,
   centerX: number,
-  startY: number,
+  zoneY: number,
+  zoneHeight: number,
   maxWidth: number,
   lineStep: number,
-  maxLines: number,
-  align: CanvasTextAlign = "center",
+  preferredMaxLines: number,
 ): number {
   if (text.trim().length === 0) {
-    return startY;
+    return zoneY;
   }
 
+  const zoneMaxLines = Math.max(1, Math.floor(zoneHeight / Math.max(1, lineStep)));
+  const maxLines = Math.max(1, Math.min(preferredMaxLines, zoneMaxLines));
   const lines = wrapText(ctx, text, maxWidth, maxLines);
+  const textBlockH = Math.max(lineStep, lines.length * lineStep);
+  const startY = zoneY + Math.max(lineStep, Math.floor((zoneHeight - textBlockH) * 0.5) + lineStep);
 
-  ctx.textAlign = align;
+  ctx.textAlign = "center";
   let cursor = startY;
   lines.forEach((line) => {
     ctx.fillText(line, centerX, cursor);
     cursor += lineStep;
   });
-
   return cursor;
 }
 

@@ -18,6 +18,58 @@ interface HudTierPalette {
   chipStroke: string;
 }
 
+interface HudSpriteSource {
+  drawSprite: (
+    ctx: CanvasRenderingContext2D,
+    id: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) => boolean;
+}
+
+export interface HudTopStripMetrics {
+  compact: boolean;
+  tight: boolean;
+  safeInsetTop: number;
+  panelH: number;
+  gap: number;
+  leftPanelW: number;
+  rightPanelW: number;
+  topStripBottom: number;
+}
+
+export function computeHudTopStripMetrics(
+  viewportWidth: number,
+  viewportHeight: number,
+): HudTopStripMetrics {
+  const compact = viewportWidth < 980 || viewportHeight < 700;
+  const tight = !compact && (viewportWidth <= 1440 || viewportHeight <= 820);
+
+  const safeInsetTop = compact
+    ? clampNumber(Math.floor(viewportHeight * 0.016), 8, 14)
+    : tight
+      ? clampNumber(Math.floor(viewportHeight * 0.014), 8, 13)
+      : clampNumber(Math.floor(viewportHeight * 0.016), 10, 18);
+  const panelH = compact ? 80 : tight ? 84 : 90;
+  const gap = compact ? 10 : tight ? 12 : 14;
+  const leftPanelW = compact ? 192 : tight ? 220 : 232;
+  const rightPanelW = compact ? 206 : tight ? 236 : 254;
+  const topStripBottom = safeInsetTop + panelH + 6;
+
+  return {
+    compact,
+    tight,
+    safeInsetTop,
+    panelH,
+    gap,
+    leftPanelW,
+    rightPanelW,
+    topStripBottom,
+  };
+}
+
 /** Canvas-space HUD overlays (never inside the gameplay camera stack). */
 export class HudRenderer {
   private hpKickRemainMs = 0;
@@ -35,22 +87,25 @@ export class HudRenderer {
     viewportWidth: number,
     viewportHeight: number,
     snapshot: HudPresentationState,
+    sprites?: HudSpriteSource,
   ): void {
     this.hpKickRemainMs = Math.max(0, this.hpKickRemainMs - 16);
     const scoreValue = snapshot.score ?? 0;
     const tier = getScoreTitle(scoreValue);
-    const palette = getHudTierPalette(tier.title);
-    const compact = viewportWidth < 980 || viewportHeight < 700;
+    const palette = getHudTierPalette(tier.color);
+    const layout = computeHudTopStripMetrics(viewportWidth, viewportHeight);
+    const compact = layout.compact;
+    const tight = layout.tight;
     const safeInsetX = clampNumber(Math.floor(viewportWidth * 0.022), 12, 28);
-    const safeInsetTop = clampNumber(Math.floor(viewportHeight * 0.02), 10, 24);
+    const safeInsetTop = layout.safeInsetTop;
     const marginX = compact ? safeInsetX : safeInsetX + 2;
     const panelY = safeInsetTop;
-    const gap = compact ? 10 : 14;
-    const panelH = compact ? 86 : 94;
+    const gap = layout.gap;
+    const panelH = layout.panelH;
     const totalW = viewportWidth - marginX * 2;
 
-    let leftPanelW = compact ? 198 : 232;
-    let rightPanelW = compact ? 214 : 254;
+    let leftPanelW = layout.leftPanelW;
+    let rightPanelW = layout.rightPanelW;
     let centerW = totalW - leftPanelW - rightPanelW - gap * 2;
     if (centerW < 170) {
       const deficit = 170 - centerW;
@@ -67,9 +122,9 @@ export class HudRenderer {
     this.drawTopStripBackdrop(
       ctx,
       marginX - 8,
-      panelY - 8,
+      panelY - 6,
       viewportWidth - marginX * 2 + 16,
-      panelH + 16,
+      panelH + 12,
       palette,
     );
 
@@ -84,6 +139,8 @@ export class HudRenderer {
       snapshot.survivorHp,
       snapshot.survivorMaxHp,
       palette,
+      tight,
+      sprites,
     );
 
     this.drawXpPanel(
@@ -95,6 +152,8 @@ export class HudRenderer {
       snapshot.xpProgress,
       snapshot.xpBudget,
       palette,
+      tight,
+      sprites,
     );
 
     this.drawScorePanel(
@@ -106,6 +165,8 @@ export class HudRenderer {
       scoreValue,
       tier.title,
       palette,
+      tight,
+      sprites,
     );
 
     ctx.restore();
@@ -152,6 +213,8 @@ export class HudRenderer {
     xpValue: number,
     xpBudget: number,
     palette: HudTierPalette,
+    tight: boolean,
+    sprites?: HudSpriteSource,
   ): void {
     this.drawPanelFrame(ctx, x, y, width, height, palette.glow);
     const ratioRaw = xpBudget > 0 ? xpValue / xpBudget : 0;
@@ -167,16 +230,18 @@ export class HudRenderer {
     gradient.addColorStop(0.5, "#7b8cff");
     gradient.addColorStop(1, "#b97cff");
 
+    const drewIcon = this.drawHudIcon(ctx, sprites, "hud_xp", barX, y + 11, 12);
+
     ctx.fillStyle = "rgba(220,233,255,0.95)";
-    ctx.font = "700 9px 'JetBrains Mono', monospace";
+    ctx.font = `700 ${tight ? 8 : 9}px 'JetBrains Mono', monospace`;
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText("XP TRACK", barX, y + 12);
+    ctx.fillText("XP TRACK", barX + (drewIcon ? 16 : 0), y + (tight ? 11 : 12));
 
     ctx.textAlign = "right";
     ctx.fillStyle = "rgba(214,224,246,0.84)";
-    ctx.font = "700 9px 'JetBrains Mono', monospace";
-    ctx.fillText(`${Math.floor(xpValue)} / ${Math.floor(xpBudget)}`, x + width - 14, y + 12);
+    ctx.font = `700 ${tight ? 8 : 9}px 'JetBrains Mono', monospace`;
+    ctx.fillText(`${Math.floor(xpValue)} / ${Math.floor(xpBudget)}`, x + width - 14, y + (tight ? 11 : 12));
 
     ctx.fillStyle = "rgba(8,12,25,0.95)";
     this.roundRect(ctx, barX - 3, barY - 3, barW + 6, barH + 6, 8);
@@ -220,35 +285,39 @@ export class HudRenderer {
     hpValue: number,
     hpMax: number,
     palette: HudTierPalette,
+    tight: boolean,
+    sprites?: HudSpriteSource,
   ): void {
     ctx.save();
     this.drawPanelFrame(ctx, x, y, w, h, palette.glow);
 
     ctx.fillStyle = "#f7f2de";
-    ctx.font = "800 23px 'Space Grotesk', sans-serif";
+    ctx.font = `800 ${tight ? 20 : 23}px 'Space Grotesk', sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`${level}`, x + 32, y + 28);
+    ctx.fillText(`${level}`, x + 32, y + (tight ? 26 : 28));
 
     ctx.fillStyle = "rgba(247, 242, 222, 0.62)";
-    ctx.font = "700 9px 'JetBrains Mono', monospace";
-    ctx.fillText("LEVEL", x + 32, y + 46);
+    ctx.font = `700 ${tight ? 8 : 9}px 'JetBrains Mono', monospace`;
+    ctx.fillText("LEVEL", x + 32, y + (tight ? 43 : 46));
 
     ctx.strokeStyle = "rgba(255,255,255,0.08)";
     ctx.lineWidth = 1;
     this.roundRect(ctx, x + 8, y + 8, 48, 48, 12);
     ctx.stroke();
 
+    const drewRunIcon = this.drawHudIcon(ctx, sprites, "hud_hp", x + 70, y + 12, 12);
+
     ctx.fillStyle = "#f8f6ff";
-    ctx.font = "700 12px 'Space Grotesk', sans-serif";
+    ctx.font = `700 ${tight ? 11 : 12}px 'Space Grotesk', sans-serif`;
     ctx.textAlign = "left";
-    ctx.fillText("Run Clock", x + 70, y + 13);
+    ctx.fillText("Run Clock", x + 70 + (drewRunIcon ? 16 : 0), y + (tight ? 12 : 13));
 
     ctx.fillStyle = "rgba(219, 228, 255, 0.9)";
-    ctx.font = "600 12px 'JetBrains Mono', monospace";
-    ctx.fillText(formatClock(elapsedMs), x + 70, y + 33);
+    ctx.font = `600 ${tight ? 11 : 12}px 'JetBrains Mono', monospace`;
+    ctx.fillText(formatClock(elapsedMs), x + 70, y + (tight ? 30 : 33));
 
-    this.drawHpBar(ctx, x + 68, y + 56, w - 84, 13, hpValue, hpMax);
+    this.drawHpBar(ctx, x + 68, y + h - 26, w - 84, tight ? 12 : 13, hpValue, hpMax, tight);
 
     const kick = Math.min(1, this.hpKickRemainMs / 180);
     if (kick > 0) {
@@ -267,6 +336,7 @@ export class HudRenderer {
     barH: number,
     hpValue: number,
     hpMax: number,
+    tight: boolean,
   ): void {
     const ratioRaw = hpMax > 0 ? hpValue / hpMax : 0;
     const ratio = Math.max(0, Math.min(1, ratioRaw));
@@ -298,7 +368,7 @@ export class HudRenderer {
     ctx.stroke();
 
     ctx.fillStyle = "rgba(255,255,255,0.5)";
-    ctx.font = "600 9px 'JetBrains Mono', monospace";
+    ctx.font = `600 ${tight ? 8 : 9}px 'JetBrains Mono', monospace`;
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
     ctx.fillText("HP", barX, barY - 1);
@@ -313,34 +383,40 @@ export class HudRenderer {
     scoreValue: number,
     tierTitle: string,
     palette: HudTierPalette,
+    tight: boolean,
+    sprites?: HudSpriteSource,
   ): void {
     ctx.save();
     this.drawPanelFrame(ctx, x, y, w, h, palette.glow);
 
+    const drewScoreIcon = this.drawHudIcon(ctx, sprites, "hud_score", x + 14, y + 10, 12);
+
     ctx.fillStyle = "#f8f6ff";
-    ctx.font = "700 12px 'Space Grotesk', sans-serif";
+    ctx.font = `700 ${tight ? 11 : 12}px 'Space Grotesk', sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText("Score", x + 14, y + 10);
+    ctx.fillText("Score", x + 14 + (drewScoreIcon ? 16 : 0), y + (tight ? 9 : 10));
 
     const scoreText = scoreValue.toLocaleString();
     const scoreFont = fitFontPx(
       ctx,
       scoreText,
       w - 28,
-      Math.max(17, Math.min(24, Math.floor(w * 0.098))),
-      13,
+      tight
+        ? Math.max(15, Math.min(18, Math.floor(w * 0.072)))
+        : Math.max(16, Math.min(20, Math.floor(w * 0.084))),
+      tight ? 11 : 12,
       "800",
       "'JetBrains Mono', monospace",
     );
     ctx.fillStyle = palette.accent;
     ctx.font = `800 ${scoreFont}px 'JetBrains Mono', monospace`;
-    ctx.fillText(scoreText, x + 14, y + 29);
+    ctx.fillText(scoreText, x + 14, y + (tight ? 27 : 30));
 
     const tierX = x + 12;
-    const tierY = y + 54;
+    const tierY = y + (tight ? 46 : 52);
     const tierW = w - 24;
-    const tierH = h - 62;
+    const tierH = Math.max(tight ? 22 : 24, h - (tight ? 52 : 60));
     ctx.fillStyle = palette.chipFill;
     this.roundRect(ctx, tierX, tierY, tierW, tierH, 10);
     ctx.fill();
@@ -351,22 +427,24 @@ export class HudRenderer {
 
     ctx.fillStyle = palette.accent;
     ctx.font = "700 8px 'JetBrains Mono', monospace";
-    ctx.fillText("TITLE", tierX + 10, tierY + 7);
+    ctx.fillText("TITLE TIER", tierX + 10, tierY + 5);
 
     const tierLabel = tierTitle.toUpperCase();
     const tierFont = fitFontPx(
       ctx,
       tierLabel,
       tierW - 20,
-      Math.max(11, Math.min(14, Math.floor(tierW * 0.078))),
+      tight
+        ? Math.max(9, Math.min(10, Math.floor(tierW * 0.058)))
+        : Math.max(10, Math.min(11, Math.floor(tierW * 0.065))),
       9,
       "900",
       "'Space Grotesk', sans-serif",
     );
     ctx.fillStyle = "#ffffff";
     ctx.font = `900 ${tierFont}px 'Space Grotesk', sans-serif`;
-    ctx.textBaseline = "middle";
-    ctx.fillText(tierLabel, tierX + 10, tierY + tierH - 9);
+    ctx.textBaseline = "top";
+    ctx.fillText(tierLabel, tierX + 10, tierY + (tight ? 13 : 14));
     ctx.restore();
   }
 
@@ -396,6 +474,24 @@ export class HudRenderer {
     ctx.stroke();
   }
 
+  private drawHudIcon(
+    ctx: CanvasRenderingContext2D,
+    sprites: HudSpriteSource | undefined,
+    id: string,
+    x: number,
+    y: number,
+    size: number,
+  ): boolean {
+    if (sprites === undefined) {
+      return false;
+    }
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+    const drew = sprites.drawSprite(ctx, id, x, y, size, size);
+    ctx.restore();
+    return drew;
+  }
+
   private roundRect(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -423,9 +519,9 @@ function compactBarHeight(width: number): number {
   return width < 280 ? 14 : 16;
 }
 
-function getHudTierPalette(tierTitle: string): HudTierPalette {
-  const normalized = tierTitle.toLowerCase();
-  if (normalized.includes("radiant")) {
+function getHudTierPalette(tierColor: string): HudTierPalette {
+  const normalized = tierColor.toLowerCase();
+  if (normalized === "gold") {
     return {
       accent: "#d7ba6a",
       glow: "rgba(215,186,106,0.32)",
@@ -433,7 +529,7 @@ function getHudTierPalette(tierTitle: string): HudTierPalette {
       chipStroke: "rgba(215,186,106,0.24)",
     };
   }
-  if (normalized.includes("zealot")) {
+  if (normalized === "indigo") {
     return {
       accent: "#8b8fd6",
       glow: "rgba(139,143,214,0.3)",
@@ -441,7 +537,7 @@ function getHudTierPalette(tierTitle: string): HudTierPalette {
       chipStroke: "rgba(139,143,214,0.24)",
     };
   }
-  if (normalized.includes("ritualist")) {
+  if (normalized === "green") {
     return {
       accent: "#90c59a",
       glow: "rgba(144,197,154,0.32)",
@@ -449,7 +545,7 @@ function getHudTierPalette(tierTitle: string): HudTierPalette {
       chipStroke: "rgba(144,197,154,0.24)",
     };
   }
-  if (normalized.includes("ritty")) {
+  if (normalized === "purple") {
     return {
       accent: "#ad94db",
       glow: "rgba(173,148,219,0.3)",
@@ -457,7 +553,7 @@ function getHudTierPalette(tierTitle: string): HudTierPalette {
       chipStroke: "rgba(173,148,219,0.24)",
     };
   }
-  if (normalized.includes("bitty")) {
+  if (normalized === "blue") {
     return {
       accent: "#8eb2e4",
       glow: "rgba(142,178,228,0.3)",
@@ -466,10 +562,10 @@ function getHudTierPalette(tierTitle: string): HudTierPalette {
     };
   }
   return {
-    accent: "#b7bcc7",
-    glow: "rgba(183,188,199,0.3)",
-    chipFill: "rgba(183,188,199,0.08)",
-    chipStroke: "rgba(183,188,199,0.24)",
+    accent: "#b58a65",
+    glow: "rgba(181,138,101,0.28)",
+    chipFill: "rgba(181,138,101,0.08)",
+    chipStroke: "rgba(181,138,101,0.22)",
   };
 }
 

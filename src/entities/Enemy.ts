@@ -43,6 +43,12 @@ export class Enemy extends Entity {
   /** Remaining hit flash time in milliseconds. */
   hitFlashRemainMs = 0;
 
+  /** Last normalized steering direction used for sprite facing. */
+  facingX = 0;
+
+  /** Last normalized steering direction used for sprite facing. */
+  facingY = 1;
+
   /** Effective chase speed for this spawn instance (world units / sec). */
   private moveSpeedPerSec = 0;
 
@@ -107,6 +113,8 @@ export class Enemy extends Entity {
     this.gemYield = flavor.elite ? 5 : 1;
     this.active = true;
     this.hitFlashRemainMs = 0;
+    this.facingX = 0;
+    this.facingY = 1;
   }
 
   /**
@@ -158,8 +166,12 @@ export class Enemy extends Entity {
     }
 
     const step = this.moveSpeedPerSec * dtSeconds;
-    this.x += (steerX / steerLen) * step;
-    this.y += (steerY / steerLen) * step;
+    const nx = steerX / steerLen;
+    const ny = steerY / steerLen;
+    this.facingX = nx;
+    this.facingY = ny;
+    this.x += nx * step;
+    this.y += ny * step;
   }
 
   flashHit(durationMs = 120): void {
@@ -189,6 +201,8 @@ export class Enemy extends Entity {
     this.swayDirection = 1;
     this.frozenRemainMs = 0;
     this.hitFlashRemainMs = 0;
+    this.facingX = 0;
+    this.facingY = 1;
   }
 
   applyFreeze(durationMs: number): void {

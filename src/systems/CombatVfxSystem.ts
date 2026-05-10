@@ -142,18 +142,18 @@ export class CombatVfxSystem {
 
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
-      ctx.fillStyle = this.withAlpha(burst.glowColor, alpha * 0.3);
+      ctx.fillStyle = this.withAlpha(burst.glowColor, alpha * 0.22);
       ctx.fill();
 
       ctx.beginPath();
       ctx.arc(0, 0, radius * 0.72, 0, Math.PI * 2);
-      ctx.strokeStyle = this.withAlpha(burst.coreColor, alpha);
+      ctx.strokeStyle = this.withAlpha(burst.coreColor, alpha * 0.8);
       ctx.lineWidth = burst.ringWidth;
       ctx.stroke();
 
       ctx.beginPath();
       ctx.arc(0, 0, radius * 1.14, 0, Math.PI * 2);
-      ctx.strokeStyle = this.withAlpha(burst.glowColor, alpha * 0.8);
+      ctx.strokeStyle = this.withAlpha(burst.glowColor, alpha * 0.55);
       ctx.lineWidth = 1.2;
       ctx.stroke();
 

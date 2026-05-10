@@ -1,0 +1,1 @@
+{"image":"public/assets/ui/ui_frames_sheet.png","cell":{"w":1024,"h":256},"grid":{"cols":2,"rows":1},"sprites":[{"id":"gameover_banner_frame","x":0,"y":0,"w":1024,"h":256},{"id":"modal_panel_frame","x":1024,"y":0,"w":1024,"h":256}]}

@@ -4,6 +4,8 @@ import type { Pickup } from "../entities/Pickup";
 import type { Player } from "../entities/Player";
 import { PLAYER_RADIUS_PX } from "../utils/constants";
 import { squaredDistance } from "../utils/math";
+import type { SpriteRegistry } from "../render/SpriteRegistry";
+import { pickupAnchorConfig } from "../render/renderTuning";
 
 export interface PickupSystemCallbacks {
   collectAllExperienceGems: () => void;
@@ -80,7 +82,7 @@ export class PickupSystem {
     });
   }
 
-  renderWorld(ctx: CanvasRenderingContext2D): void {
+  renderWorld(ctx: CanvasRenderingContext2D, sprites?: SpriteRegistry): void {
     this.pickupPool.forEachActive((pickup) => {
       if (!pickup.active) {
         return;
@@ -90,13 +92,31 @@ export class PickupSystem {
 
       ctx.save();
       ctx.globalAlpha = 0.88;
-      ctx.beginPath();
-      ctx.arc(pickup.x, pickup.y, pickup.radiusPx, 0, Math.PI * 2);
-      ctx.fillStyle = pickup.fillHex;
-      ctx.fill();
-      ctx.lineWidth = Math.max(2, pickup.radiusPx * 0.18);
-      ctx.strokeStyle = pickup.outlineHex;
-      ctx.stroke();
+      const drawSize = pickup.radiusPx * 2.8;
+      const spriteId = this.resolvePickupSpriteId(pickup.pickupKind);
+      const anchor = spriteId !== undefined
+        ? (pickupAnchorConfig[spriteId] ?? { x: 0, y: 0 })
+        : { x: 0, y: 0 };
+      const drewSprite = spriteId !== undefined && sprites !== undefined
+        ? sprites.drawSprite(
+            ctx,
+            spriteId,
+            pickup.x - drawSize / 2 + anchor.x,
+            pickup.y - drawSize / 2 + anchor.y,
+            drawSize,
+            drawSize,
+          )
+        : false;
+
+      if (!drewSprite) {
+        ctx.beginPath();
+        ctx.arc(pickup.x, pickup.y, pickup.radiusPx, 0, Math.PI * 2);
+        ctx.fillStyle = pickup.fillHex;
+        ctx.fill();
+        ctx.lineWidth = Math.max(2, pickup.radiusPx * 0.18);
+        ctx.strokeStyle = pickup.outlineHex;
+        ctx.stroke();
+      }
 
       switch (pickup.pickupKind) {
         case "floor_chicken":
@@ -131,6 +151,21 @@ export class PickupSystem {
       ctx.fillText(meta.name, pickup.x, pickup.y + pickup.radiusPx + 4);
       ctx.restore();
     });
+  }
+
+  private resolvePickupSpriteId(kind: PickupKind): string | undefined {
+    switch (kind) {
+      case "floor_chicken":
+        return "field_ration";
+      case "vacuum":
+        return "gem_siphon";
+      case "rosary":
+        return "halo_charm";
+      case "orologion":
+        return "chrono_seal";
+      default:
+        return undefined;
+    }
   }
 
   private consumePickup(pickup: Pickup): void {

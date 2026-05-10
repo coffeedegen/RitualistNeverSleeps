@@ -1,0 +1,13 @@
+{
+  "image": "public/assets/pickups/pickups_atlas.png",
+  "cell": { "w": 48, "h": 48 },
+  "grid": { "cols": 4, "rows": 2 },
+  "sprites": [
+    { "id": "field_ration", "x": 0, "y": 0, "w": 48, "h": 48 },
+    { "id": "gem_siphon", "x": 48, "y": 0, "w": 48, "h": 48 },
+    { "id": "halo_charm", "x": 96, "y": 0, "w": 48, "h": 48 },
+    { "id": "chrono_seal", "x": 144, "y": 0, "w": 48, "h": 48 },
+    { "id": "essence_gem", "x": 0, "y": 48, "w": 48, "h": 48 },
+    { "id": "reliquary_chest", "x": 48, "y": 48, "w": 48, "h": 48 }
+  ]
+}

@@ -2,6 +2,9 @@
 
 This file is the single prep sheet for the game art pass.
 
+Canonical style lock:
+- `docs/CHIBI_STYLE_GUIDE.md` is the source of truth for player/enemy sprite direction.
+
 Current status:
 - The game still uses placeholder geometry for most combat actors.
 - A temporary tileset now exists at `public/assets/tilesets/void_shrine_placeholder_tileset.svg`.
@@ -15,13 +18,19 @@ The player-facing content names below have been renamed to original terms while 
 - All gameplay sprites should be built on transparent backgrounds unless noted.
 - Keep every sprite centered in its canvas.
 - Leave 2 to 6 px of padding around the silhouette so rotation and scaling do not clip edges.
-- Use pixel-art or clean hand-drawn sprites consistently; do not mix highly realistic and highly stylized art.
+- Use high-contrast chibi pixel-art consistently across all gameplay actors.
 - World-scale baseline:
   - Tile size: 64 x 64 px
   - Small pickup / gem sprite: 24 to 48 px
   - Standard unit sprite: 64 x 64 px
   - Large VFX sprite: 128 x 128 px
   - Full-screen burst: 256 x 256 px or larger if needed
+
+Gameplay actor style lock (summary):
+- Top-down 3.5D perspective.
+- 1:1.5 head-to-body proportion.
+- Dual outlines: 2 px outer contour + 1 px internal lines.
+- Cel-shading only, max two shadow tiers, no gradients/dither.
 
 ## Already Referenced By Code
 
@@ -34,20 +43,25 @@ The player-facing content names below have been renamed to original terms while 
 
 | Asset | Suggested size | Notes |
 |---|---:|---|
-| Player idle sprite | 64 x 64 | Minimum viable frame. |
-| Player walk / run sheet | 64 x 64 per frame | Recommended: 8 directions x 4 frames = 32 frames. |
+| Player sprite | 64 x 64 | Chibi black cat. Canonical filename: `public/assets/characters/player/player_sprite_64x64.png`. |
+| Player walk / run sheet | 64 x 64 per frame | Preferred runtime target: 4 directions x 4 frames. |
 | Player attack overlay | 64 x 64 per frame | Only if you want visible attack animations. |
 | Player hurt / flash frame | 64 x 64 | Optional, but useful for damage feedback. |
+
+Player lock notes:
+- Fur base should use `#1C1C22` (not pure black).
+- Eyes should be high-saturation focal points (cyan/gold/neon green families).
+- Sprite should read about 60 px tall in-canvas (with breathing room for idle motion).
 
 ## Enemies
 
 | Enemy | Suggested size | Notes |
 |---|---:|---|
-| Bat | 48 x 48 | Small silhouette. Keep wings readable. |
-| Skeleton | 64 x 64 | Standard humanoid size. |
-| Mudman | 64 x 64 | Chunkier body, low stance. |
-| Mummy | 64 x 64 | Tall wrapped body. |
-| Mantis | 64 x 64 | Slightly leaner but still 64 x 64 canvas. |
+| Bat | 48 x 48 | Full-width wingspan, small core body, leave bottom 8 to 10 px for detached shadow zone. |
+| Skeleton | 64 x 64 | Rigid, jagged, thin silhouette with clear negative space and 2 px bones. |
+| Mudman | 64 x 64 | Bottom-heavy blob silhouette, wide base tapering upward. |
+| Mummy | 64 x 64 | Blocky cylindrical posture, outstretched rectangular read. |
+| Mantis | 64 x 64 | Top-heavy sharp/aggressive silhouette with diagonal scythe arms. |
 
 Recommended enemy animation minimum:
 - Idle / hover: 2 to 4 frames

@@ -156,21 +156,21 @@ const RUN_CARD_THEMES: RunCardTheme[] = [
 ];
 
 const grainTileCache = new Map<string, HTMLCanvasElement>();
-const SCREEN_CARD_BASE_WIDTH = 1040;
+const RUN_CARD_ASPECT_RATIO = 3 / 2;
+const SCREEN_CARD_BASE_WIDTH = 1050;
 const SCREEN_CARD_BASE_HEIGHT = 700;
-const RUN_CARD_MAX_SKILLS = 3;
-const RUN_CARD_MAX_ENEMIES = 3;
 const RITUAL_WATERMARK_SRC = "/assets/ui/translucent.png";
+const UI_FRAMES_SHEET_SRC = "/assets/ui/ui_frames_sheet.png";
 let ritualWatermarkImage: HTMLImageElement | null = null;
 let ritualWatermarkRequested = false;
+let uiFramesSheetImage: HTMLImageElement | null = null;
+let uiFramesSheetRequested = false;
 
-export function buildXShareText(score: number): string {
+export function buildXShareText(score: number, gameUrl: string): string {
   return [
-    `I just played Ritualist Never Sleeps and dropped this high score ${score.toLocaleString()}.`,
-    "",
-    "You think you can beat it?",
-    "Let's see who's really locked in!",
-    "gRitual!",
+    `What an awesome game made by @coffeedegen, I have scored ${score.toLocaleString()}. Can you beat it?`,
+    `Play the game here: ${gameUrl}`,
+    "@ritualnet | @ritualfnd",
   ].join("\n");
 }
 
@@ -194,14 +194,14 @@ export function renderRunCard(
   const cardY = frame.y;
   const cardW = frame.w;
   const cardH = frame.h;
+  const exportWideCard = exportMode && cardW / cardH >= 1.45;
   const compactCard = false;
-  const innerPad = compactCard
-    ? Math.max(16, Math.floor(cardW * 0.024))
-    : Math.max(24, Math.floor(cardW * 0.032));
+  const innerPad = exportWideCard
+    ? Math.max(26, Math.min(40, Math.floor(cardW * 0.024)))
+    : compactCard
+      ? Math.max(16, Math.floor(cardW * 0.024))
+      : Math.max(24, Math.floor(cardW * 0.032));
   const accent = theme.primary;
-  const warm = theme.secondary;
-  const gold = theme.gold;
-  const blue = theme.blue;
 
   ctx.save();
 
@@ -214,46 +214,26 @@ export function renderRunCard(
     Math.max(width, height) * 0.6,
   );
   shadow.addColorStop(0, "rgba(0,0,0,0.0)");
-  shadow.addColorStop(1, "rgba(0,0,0,0.55)");
+  shadow.addColorStop(1, "rgba(0,0,0,0.58)");
   ctx.fillStyle = shadow;
   ctx.fillRect(0, 0, width, height);
 
-  const cardFill = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
+  const cardFill = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
   cardFill.addColorStop(0, theme.cardTop);
-  cardFill.addColorStop(0.33, theme.cardMid);
-  cardFill.addColorStop(0.72, "rgba(6, 7, 13, 0.995)");
+  cardFill.addColorStop(0.26, theme.cardMid);
+  cardFill.addColorStop(0.68, "rgba(7, 8, 13, 0.995)");
   cardFill.addColorStop(1, theme.cardBottom);
-
   roundRect(ctx, cardX, cardY, cardW, cardH, 28);
   ctx.fillStyle = cardFill;
   ctx.fill();
 
-  ctx.strokeStyle = "rgba(127,224,168,0.26)";
-  ctx.lineWidth = 2;
+  const brassBorder = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
+  brassBorder.addColorStop(0, "rgba(218, 182, 102, 0.62)");
+  brassBorder.addColorStop(0.45, "rgba(127, 224, 168, 0.26)");
+  brassBorder.addColorStop(1, "rgba(92, 61, 24, 0.72)");
+  ctx.strokeStyle = brassBorder;
+  ctx.lineWidth = 2.4;
   roundRect(ctx, cardX, cardY, cardW, cardH, 28);
-  ctx.stroke();
-
-  // Collectible-frame corner accents.
-  const cornerLen = Math.max(18, Math.floor(cardW * 0.028));
-  ctx.strokeStyle = withAlpha(accent, 0.62);
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(cardX + 16, cardY + 16);
-  ctx.lineTo(cardX + 16 + cornerLen, cardY + 16);
-  ctx.moveTo(cardX + 16, cardY + 16);
-  ctx.lineTo(cardX + 16, cardY + 16 + cornerLen);
-  ctx.moveTo(cardX + cardW - 16, cardY + 16);
-  ctx.lineTo(cardX + cardW - 16 - cornerLen, cardY + 16);
-  ctx.moveTo(cardX + cardW - 16, cardY + 16);
-  ctx.lineTo(cardX + cardW - 16, cardY + 16 + cornerLen);
-  ctx.moveTo(cardX + 16, cardY + cardH - 16);
-  ctx.lineTo(cardX + 16 + cornerLen, cardY + cardH - 16);
-  ctx.moveTo(cardX + 16, cardY + cardH - 16);
-  ctx.lineTo(cardX + 16, cardY + cardH - 16 - cornerLen);
-  ctx.moveTo(cardX + cardW - 16, cardY + cardH - 16);
-  ctx.lineTo(cardX + cardW - 16 - cornerLen, cardY + cardH - 16);
-  ctx.moveTo(cardX + cardW - 16, cardY + cardH - 16);
-  ctx.lineTo(cardX + cardW - 16, cardY + cardH - 16 - cornerLen);
   ctx.stroke();
 
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
@@ -261,110 +241,70 @@ export function renderRunCard(
   roundRect(ctx, cardX + 6, cardY + 6, cardW - 12, cardH - 12, 22);
   ctx.stroke();
 
-  const topWash = ctx.createLinearGradient(cardX, cardY, cardX, cardY + 180);
-  topWash.addColorStop(0, withAlpha(accent, 0.14));
-  topWash.addColorStop(0.48, withAlpha(accent, 0.06));
-  topWash.addColorStop(1, withAlpha(accent, 0));
-  ctx.fillStyle = topWash;
-  roundRect(ctx, cardX + 1, cardY + 1, cardW - 2, 180, 28);
-  ctx.fill();
-
-  if (exportMode) {
-    // Metallic top trim reserved for exported card art.
-    const trimW = Math.min(cardW * 0.42, 380);
-    const trimH = 22;
-    const trimX = cardX + (cardW - trimW) / 2;
-    const trimY = cardY + 10;
-    const trimGrad = ctx.createLinearGradient(trimX, trimY, trimX + trimW, trimY + trimH);
-    trimGrad.addColorStop(0, "rgba(220,230,255,0.55)");
-    trimGrad.addColorStop(0.5, withAlpha(accent, 0.5));
-    trimGrad.addColorStop(1, "rgba(220,230,255,0.55)");
-    ctx.fillStyle = trimGrad;
-    roundRect(ctx, trimX, trimY, trimW, trimH, 8);
-    ctx.fill();
-  }
-
-  const cornerBloom = ctx.createRadialGradient(
-    cardX + cardW * 0.12,
-    cardY + cardH * 0.12,
-    8,
-    cardX + cardW * 0.12,
-    cardY + cardH * 0.12,
-    cardW * 0.42,
-  );
-  cornerBloom.addColorStop(0, theme.paperTint);
-  cornerBloom.addColorStop(0.38, withAlpha(accent, 0.04));
-  cornerBloom.addColorStop(1, withAlpha(accent, 0));
-  ctx.fillStyle = cornerBloom;
-  ctx.fillRect(cardX, cardY, cardW, cardH);
-
-  const deepShadow = ctx.createRadialGradient(
-    cardX + cardW * 0.74,
-    cardY + cardH * 0.76,
-    40,
-    cardX + cardW * 0.74,
-    cardY + cardH * 0.76,
-    cardW * 0.64,
-  );
-  deepShadow.addColorStop(0, withAlpha(warm, 0.05));
-  deepShadow.addColorStop(0.6, withAlpha(warm, 0.02));
-  deepShadow.addColorStop(1, "rgba(255,107,122,0)");
-  ctx.fillStyle = deepShadow;
-  ctx.fillRect(cardX, cardY, cardW, cardH);
-
   drawPaperGrain(ctx, cardX, cardY, cardW, cardH, summary.serialNumber, theme, exportMode);
-  drawCardWatermark(ctx, cardX, cardY, cardW, cardH);
+  drawCardWatermark(ctx, cardX, cardY, cardW, cardH, {
+    opacity: exportMode ? 0.10 : 0.08,
+    scale: exportMode ? 0.84 : 0.78,
+    centerXRatio: 0.5,
+    centerYRatio: 0.19,
+  });
 
-  // Header
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  drawRunSigil(ctx, cardX, cardY, cardW, cardH, theme);
+  ctx.restore();
+
+  drawRunicCorners(ctx, cardX, cardY, cardW, cardH, theme, accent);
+
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  ctx.shadowBlur = 0;
-  if (exportMode) {
-    ctx.fillStyle = "rgba(230,239,255,0.95)";
-    ctx.font = `900 ${compactCard ? 11 : 14}px 'Space Grotesk', 'Segoe UI', sans-serif`;
-    ctx.fillText("MINTABLE CARD", cardX + cardW * 0.5, cardY + innerPad - (compactCard ? 7 : 10));
-    ctx.fillStyle = withAlpha(gold, 0.88);
-    ctx.font = `800 ${compactCard ? 9 : 11}px 'JetBrains Mono', monospace`;
-    ctx.fillText("LEGENDARY ACHIEVEMENT", cardX + cardW * 0.5, cardY + innerPad + (compactCard ? 5 : 6));
-  }
-
-  const titleY = cardY + innerPad + (exportMode ? (compactCard ? 22 : 30) : (compactCard ? 20 : 22));
-  const cardTitleFill = ctx.createLinearGradient(0, titleY - 22, 0, titleY + 10);
-  cardTitleFill.addColorStop(0, "rgba(246,252,255,0.96)");
-  cardTitleFill.addColorStop(0.58, "rgba(228,244,255,0.92)");
-  cardTitleFill.addColorStop(1, "rgba(194,230,215,0.9)");
-  ctx.fillStyle = cardTitleFill;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  ctx.shadowColor = "rgba(65, 211, 124, 0.42)";
-  ctx.shadowBlur = exportMode ? 16 : (compactCard ? 9 : 12);
-  fitCenteredTitle(
+  const titleY = cardY + Math.floor(cardH * 0.12);
+  const titleMaxW = cardW - innerPad * 2 - Math.floor(cardW * 0.06);
+  const titleSize = fitTextWidth(
     ctx,
     "RITUALIST NEVER SLEEPS",
-    cardX + cardW * 0.5,
-    titleY,
-    cardW - innerPad * 2 - 20,
-    compactCard ? Math.max(24, Math.min(34, Math.floor(cardW * 0.035))) : Math.max(30, Math.min(44, Math.floor(cardW * 0.0415))),
-    compactCard ? 18 : 21,
+    titleMaxW,
+    exportMode ? 50 : 46,
+    exportMode ? 28 : 24,
+    "900",
+    "'Cinzel', 'Times New Roman', serif",
   );
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = "rgba(246,252,255,0.26)";
-  ctx.strokeText("RITUALIST NEVER SLEEPS", cardX + cardW * 0.5, titleY);
+  const titleFill = ctx.createLinearGradient(0, titleY - titleSize, 0, titleY + 10);
+  titleFill.addColorStop(0, "rgba(252, 248, 228, 0.98)");
+  titleFill.addColorStop(0.48, "rgba(220, 243, 223, 0.98)");
+  titleFill.addColorStop(1, "rgba(208, 175, 98, 0.95)");
+  ctx.fillStyle = titleFill;
+  ctx.shadowColor = "rgba(68, 214, 145, 0.28)";
+  ctx.shadowBlur = exportMode ? 18 : 14;
+  ctx.font = `900 ${titleSize}px 'Cinzel', 'Times New Roman', serif`;
+  ctx.fillText("RITUALIST NEVER SLEEPS", cardX + cardW * 0.5, titleY);
   ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255, 240, 204, 0.18)";
+  ctx.lineWidth = 1;
+  ctx.strokeText("RITUALIST NEVER SLEEPS", cardX + cardW * 0.5, titleY);
 
-  const titleRuleY = titleY + (compactCard ? 14 : 16);
-  ctx.strokeStyle = withAlpha(accent, 0.22);
+  const titleRuleY = titleY + Math.max(14, Math.floor(titleSize * 0.34));
+  const ruleGrad = ctx.createLinearGradient(cardX + cardW * 0.21, titleRuleY, cardX + cardW * 0.79, titleRuleY);
+  ruleGrad.addColorStop(0, "rgba(218, 182, 102, 0)");
+  ruleGrad.addColorStop(0.2, "rgba(218, 182, 102, 0.54)");
+  ruleGrad.addColorStop(0.5, "rgba(127, 224, 168, 0.26)");
+  ruleGrad.addColorStop(0.8, "rgba(218, 182, 102, 0.54)");
+  ruleGrad.addColorStop(1, "rgba(218, 182, 102, 0)");
+  ctx.strokeStyle = ruleGrad;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(cardX + cardW * 0.2, titleRuleY);
-  ctx.lineTo(cardX + cardW * 0.8, titleRuleY);
+  ctx.moveTo(cardX + cardW * 0.21, titleRuleY);
+  ctx.lineTo(cardX + cardW * 0.79, titleRuleY);
   ctx.stroke();
 
-  const avatarSize = compactCard
-    ? Math.max(116, Math.min(158, Math.floor(cardW * 0.16)))
-    : Math.max(156, Math.min(205, Math.floor(cardW * 0.184)));
-  const avatarX = cardX + innerPad;
-  const avatarY = titleRuleY + (compactCard ? 10 : 16);
+  const middleTop = cardY + Math.floor(cardH * 0.20);
+  const leftColW = Math.floor(cardW * 0.36);
+  const leftX = cardX + innerPad;
+  const avatarSize = exportMode
+    ? Math.max(208, Math.min(268, Math.floor(cardW * 0.185)))
+    : Math.max(180, Math.min(238, Math.floor(cardW * 0.176)));
+  const avatarX = leftX + Math.floor((leftColW - avatarSize) * 0.05);
+  const avatarY = middleTop + 10;
   drawAvatar(
     ctx,
     avatarX,
@@ -375,205 +315,204 @@ export function renderRunCard(
     accent,
     theme,
   );
+  drawWaxSealPlaceholder(ctx, avatarX + avatarSize * 0.72, avatarY + avatarSize * 0.80, avatarSize * 0.24, theme);
 
-  const scoreBlockW = compactCard ? Math.min(250, Math.floor(cardW * 0.31)) : Math.min(308, Math.floor(cardW * 0.31));
-  const scoreBlockH = compactCard ? 104 : 126;
-  const scoreBlockX = cardX + cardW - innerPad - scoreBlockW;
-  const scoreBlockY = avatarY + (compactCard ? 6 : 8);
-  const scoreFill = ctx.createLinearGradient(scoreBlockX, scoreBlockY, scoreBlockX, scoreBlockY + scoreBlockH);
-  scoreFill.addColorStop(0, withAlpha(accent, 0.20));
-  scoreFill.addColorStop(1, "rgba(11, 16, 20, 0.92)");
-  ctx.fillStyle = scoreFill;
-  roundRect(ctx, scoreBlockX, scoreBlockY, scoreBlockW, scoreBlockH, compactCard ? 16 : 20);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(127,224,168,0.28)";
-  ctx.lineWidth = 1;
-  roundRect(ctx, scoreBlockX, scoreBlockY, scoreBlockW, scoreBlockH, compactCard ? 16 : 20);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.06)";
-  roundRect(ctx, scoreBlockX + 1, scoreBlockY + 1, scoreBlockW - 2, scoreBlockH - 2, compactCard ? 15 : 19);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.stroke();
-
-  const scorePad = compactCard ? 12 : 16;
-  ctx.fillStyle = "rgba(255,255,255,0.58)";
-  ctx.font = `700 ${compactCard ? 9 : 10}px 'JetBrains Mono', monospace`;
-  ctx.textAlign = "left";
-  ctx.fillText("FINAL SCORE", scoreBlockX + scorePad, scoreBlockY + (compactCard ? 19 : 24));
-
-  const scoreText = summary.score.toLocaleString();
-  const scoreFontSize = fitTextWidth(
+  const handle = summary.xHandle ? `@${summary.xHandle}` : summary.displayName;
+  const walletShort = shortenWallet(summary.walletAddress);
+  const tier = summary.rankTitle;
+  const identityX = leftX + Math.floor(cardW * 0.005);
+  const identityY = avatarY + avatarSize + Math.max(14, Math.floor(cardH * 0.016));
+  const identityRowGap = Math.max(32, Math.floor(cardH * 0.05));
+  const identityW = leftColW - Math.floor(cardW * 0.02);
+  drawIdentityLine(
     ctx,
-    scoreText,
-    scoreBlockW - scorePad * 2,
-    compactCard ? 26 : 32,
-    compactCard ? 15 : 18,
-    "900",
-    "'Space Grotesk', 'Segoe UI', sans-serif",
+    null,
+    handle,
+    identityX,
+    identityY,
+    identityW,
+    theme.primary,
+    0,
+    exportMode ? 18 : 16,
+    0,
   );
-  ctx.fillStyle = "#f9fbff";
-  ctx.font = `900 ${scoreFontSize}px 'Space Grotesk', 'Segoe UI', sans-serif`;
-  ctx.textAlign = "right";
-  ctx.fillText(scoreText, scoreBlockX + scoreBlockW - scorePad, scoreBlockY + (compactCard ? 49 : 60));
+  drawIdentityLine(
+    ctx,
+    null,
+    walletShort,
+    identityX,
+    identityY + identityRowGap,
+    identityW,
+    "rgba(198, 209, 225, 0.9)",
+    0,
+    exportMode ? 12 : 11,
+    0,
+  );
+  drawIdentityLine(
+    ctx,
+    null,
+    tier,
+    identityX,
+    identityY + identityRowGap * 2,
+    identityW,
+    "#ffffff",
+    0,
+    exportMode ? 20 : 18,
+    0,
+  );
 
-  const killsValue = summary.kills.toLocaleString();
-  const killsY = scoreBlockY + (compactCard ? 84 : 92);
-  ctx.fillStyle = "rgba(255,255,255,0.52)";
-  ctx.font = `700 ${compactCard ? 9 : 10}px 'JetBrains Mono', monospace`;
-  ctx.textAlign = "left";
-  ctx.fillText("KILLS", scoreBlockX + scorePad, killsY);
-  ctx.fillStyle = withAlpha(accent, 0.95);
-  ctx.font = `800 ${compactCard ? 13 : 15}px 'Space Grotesk', 'Segoe UI', sans-serif`;
-  ctx.textAlign = "right";
-  ctx.fillText(killsValue, scoreBlockX + scoreBlockW - scorePad, killsY);
+  const plaqueW = Math.max(Math.floor(cardW * 0.28), exportMode ? 420 : 340);
+  const plaqueH = exportMode ? 160 : 138;
+  const plaqueX = cardX + cardW - innerPad - plaqueW;
+  const plaqueY = middleTop + Math.max(8, Math.floor(cardH * 0.014));
+  drawStatsPlaque(ctx, plaqueX, plaqueY, plaqueW, plaqueH, summary, exportMode);
 
-  const identityX = avatarX + avatarSize + (compactCard ? 18 : 28);
-  const identityMaxW = Math.max(120, scoreBlockX - identityX - (compactCard ? 14 : 18));
-  ctx.textAlign = "left";
+  const gridTop = cardY + Math.floor(cardH * 0.55);
+  const gridBottom = cardY + Math.floor(cardH * 0.80);
+  const gridH = Math.max(118, gridBottom - gridTop);
+  const gridGapX = Math.max(14, Math.floor(cardW * 0.014));
+  const gridGapY = Math.max(12, Math.floor(cardH * 0.016));
+  const gridW = cardW - innerPad * 2;
+  const cellW = Math.floor((gridW - gridGapX * 2) / 3);
+  const cellH = Math.floor((gridH - gridGapY) / 2);
+  const gridLabelsRow1 = [
+    ["KILLS", `${summary.kills.toLocaleString()}`, `Enemies defeated`],
+    ["DURATION", formatRunDuration(summary.survivedMs), `UTC survival`],
+    ["LEVEL", `${summary.level}`, `Survivor level`],
+  ] as const;
+  const gridLabelsRow2 = [
+    ["RANK", summary.rankTitle, `Current ritual rank`],
+    ["SCORE", summary.score.toLocaleString(), `Final score`],
+    ["TWITTER", handle, `Wallet ${walletShort}`],
+  ] as const;
+  for (let col = 0; col < 3; col += 1) {
+    const x = cardX + innerPad + col * (cellW + gridGapX);
+    drawCompactSummaryTile(
+      ctx,
+      x,
+      gridTop,
+      cellW,
+      cellH,
+      gridLabelsRow1[col]![0],
+      gridLabelsRow1[col]![1],
+      gridLabelsRow1[col]![2],
+      "#5fdaf2",
+      exportMode,
+      undefined,
+      false,
+    );
+    drawCompactSummaryTile(
+      ctx,
+      x,
+      gridTop + cellH + gridGapY,
+      cellW,
+      cellH,
+      gridLabelsRow2[col]![0],
+      gridLabelsRow2[col]![1],
+      gridLabelsRow2[col]![2],
+      "#5fdaf2",
+      exportMode,
+      undefined,
+      false,
+    );
+  }
+
+  const footerCenterX = cardX + cardW * 0.5;
+  const scriptY = cardY + cardH - Math.max(74, Math.floor(cardH * 0.08));
+  const scriptPrefix = "Made by ";
+  const scriptName = "coffeedegen";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `italic 700 ${exportMode ? 16 : 14}px 'Cormorant Garamond', 'Times New Roman', serif`;
+  ctx.fillStyle = "rgba(235, 210, 148, 0.94)";
+  const scriptPrefixW = ctx.measureText(scriptPrefix).width;
+  ctx.font = `italic 800 ${exportMode ? 17 : 15}px 'Cormorant Garamond', 'Times New Roman', serif`;
+  const scriptNameW = ctx.measureText(scriptName).width;
+  const scriptStartX = footerCenterX - (scriptPrefixW + scriptNameW) / 2;
+  ctx.fillText(scriptPrefix, scriptStartX + scriptPrefixW / 2, scriptY);
+  ctx.fillStyle = "#45efd6";
+  ctx.shadowColor = "rgba(69, 239, 214, 0.82)";
+  ctx.shadowBlur = exportMode ? 16 : 10;
+  ctx.fillText(scriptName, scriptStartX + scriptPrefixW + scriptNameW / 2, scriptY);
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(247,242,222,0.96)";
-  const nameFont = compactCard ? "800 19px 'Space Grotesk', 'Segoe UI', sans-serif" : "800 25px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.font = nameFont;
-  const safeDisplayName = clampTextTail(ctx, summary.displayName, identityMaxW, nameFont);
-  ctx.fillText(safeDisplayName, identityX, avatarY + (compactCard ? 27 : 34));
+  ctx.fillStyle = "rgba(210, 232, 226, 0.82)";
+  ctx.font = `700 ${exportMode ? 12 : 10}px 'JetBrains Mono', monospace`;
+  ctx.fillText("Official Run Card", footerCenterX, scriptY + (exportMode ? 18 : 16));
 
-  ctx.fillStyle = "rgba(219,228,255,0.66)";
-  const handleFont = compactCard ? "600 10px 'JetBrains Mono', monospace" : "600 12px 'JetBrains Mono', monospace";
-  ctx.font = handleFont;
-  const handleLine = summary.xHandle ? `@${summary.xHandle}` : "No X handle linked";
-  ctx.fillText(clampTextTail(ctx, handleLine, identityMaxW, handleFont), identityX, avatarY + (compactCard ? 45 : 56));
-
-  ctx.fillStyle = "rgba(219,228,255,0.58)";
-  const walletFont = compactCard ? "500 9px 'JetBrains Mono', monospace" : "500 11px 'JetBrains Mono', monospace";
-  ctx.font = walletFont;
-  ctx.fillText(clampTextTail(ctx, shortenWallet(summary.walletAddress), identityMaxW, walletFont), identityX, avatarY + (compactCard ? 61 : 76));
-
-  ctx.fillStyle = "#ffffff";
-  const rankFont = compactCard ? "900 18px 'Space Grotesk', 'Segoe UI', sans-serif" : "900 22px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.font = rankFont;
-  ctx.fillText(clampTextTail(ctx, summary.rankTitle, identityMaxW, rankFont), identityX, avatarY + (compactCard ? 84 : 106));
-
-  const headerRuleY = Math.max(avatarY + avatarSize, scoreBlockY + scoreBlockH) + (compactCard ? 8 : 10);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  const stripH = exportMode ? 34 : 30;
+  const stripY = cardY + cardH - stripH - 12;
+  const stripGrad = ctx.createLinearGradient(cardX, stripY, cardX, stripY + stripH);
+  stripGrad.addColorStop(0, "rgba(184, 122, 57, 0.82)");
+  stripGrad.addColorStop(0.5, "rgba(124, 79, 35, 0.92)");
+  stripGrad.addColorStop(1, "rgba(68, 43, 19, 0.94)");
+  ctx.fillStyle = stripGrad;
+  roundRect(ctx, cardX + innerPad, stripY, cardW - innerPad * 2, stripH, 10);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(241, 201, 147, 0.28)";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(cardX + innerPad, headerRuleY);
-  ctx.lineTo(cardX + cardW - innerPad, headerRuleY);
+  roundRect(ctx, cardX + innerPad, stripY, cardW - innerPad * 2, stripH, 10);
   ctx.stroke();
-
-  const statsY = headerRuleY + (compactCard ? 12 : 18);
-  const statGap = compactCard ? 8 : 12;
-  const pillWidth = Math.floor((cardW - innerPad * 2 - statGap * 2) / 3);
-  drawStatPill(ctx, cardX + innerPad, statsY, pillWidth, "☠ KILLS", `${summary.kills}`, accent, compactCard);
-  drawStatPill(
+  drawSummaryFrameOverlay(
     ctx,
-    cardX + innerPad + pillWidth + statGap,
-    statsY,
-    pillWidth,
-    "◷ TIME",
-    formatRunDuration(summary.survivedMs),
-    blue,
-    compactCard,
+    cardX + innerPad + 2,
+    stripY + 2,
+    cardW - innerPad * 2 - 4,
+    stripH - 4,
+    8,
   );
-  drawStatPill(
-    ctx,
-    cardX + innerPad + (pillWidth + statGap) * 2,
-    statsY,
-    pillWidth,
-    "✦ LEVEL",
-    `${summary.level}`,
-    gold,
-    compactCard,
-  );
-
-  const statPillH = compactCard ? 42 : 48;
-  const contentBandY = statsY + statPillH + (compactCard ? 8 : 10);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(cardX + innerPad, contentBandY - (compactCard ? 8 : 12));
-  ctx.lineTo(cardX + cardW - innerPad, contentBandY - (compactCard ? 8 : 12));
-  ctx.stroke();
-
-  const footerY = cardY + cardH - (compactCard ? 30 : 48);
-  const serialY = footerY - (compactCard ? 20 : 28);
-  const metaChipH = compactCard ? 34 : 44;
-  const metaBandY = serialY - metaChipH - (compactCard ? 12 : 18);
-
-  const contentTop = contentBandY + (compactCard ? 8 : 10);
-  const contentBottom = metaBandY - (compactCard ? 14 : 18);
-  const contentHeight = Math.max(compactCard ? 84 : 118, contentBottom - contentTop);
-  const leftColW = Math.floor((cardW - innerPad * 2 - (compactCard ? 12 : 18)) * 0.56);
-  const rightColW = cardW - innerPad * 2 - (compactCard ? 12 : 18) - leftColW;
-  const leftX = cardX + innerPad;
-  const rightX = leftX + leftColW + (compactCard ? 12 : 18);
-
-  drawSectionLabel(ctx, leftX, contentTop, "SKILLS", accent, compactCard);
-  drawSectionLabel(ctx, rightX, contentTop, "ENEMY BREAKDOWN", warm, compactCard);
-
-  const dividerX = leftX + leftColW + (compactCard ? 6 : 9);
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.beginPath();
-  ctx.moveTo(dividerX, contentTop + 4);
-  ctx.lineTo(dividerX, contentTop + contentHeight - 8);
-  ctx.stroke();
-
-  const skillStartY = contentTop + (compactCard ? 18 : 24);
-  drawSkillGrid(ctx, summary.skills, leftX, skillStartY, leftColW, contentHeight - (compactCard ? 18 : 24), compactCard);
-  drawEnemyBreakdown(
-    ctx,
-    summary.enemyKills,
-    rightX,
-    skillStartY,
-    rightColW,
-    contentHeight - (compactCard ? 18 : 24),
-    warm,
-    compactCard,
-  );
-
-  drawRunSigil(ctx, cardX, cardY, cardW, cardH, theme);
-
-  drawMetadataBand(ctx, summary, cardX, cardW, metaBandY, metaChipH, serialY, theme, compactCard);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  ctx.beginPath();
-  ctx.moveTo(cardX + innerPad, footerY - (compactCard ? 10 : 14));
-  ctx.lineTo(cardX + cardW - innerPad, footerY - (compactCard ? 10 : 14));
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.64)";
-  ctx.font = `600 ${compactCard ? 8 : 10}px 'JetBrains Mono', monospace`;
-  ctx.fillText(exportMode ? "EXPORT EDITION / PRINT READY" : "MINTABLE CARD / SHARE READY", cardX + innerPad, footerY);
-
-  ctx.fillStyle = "rgba(219,228,255,0.5)";
-  ctx.font = `600 ${compactCard ? 8 : 9}px 'JetBrains Mono', monospace`;
-  ctx.fillText("gRitual", cardX + cardW - innerPad - (compactCard ? 38 : 46), footerY);
+  const serialDate = formatCardDateStamp(summary.capturedAt);
+  const mintedStamp = formatCardMintedStamp(summary.capturedAt);
+  const serialText = `SERIAL 001-${serialDate} • MINTED ${mintedStamp}`;
+  ctx.fillStyle = "rgba(255, 246, 222, 0.94)";
+  ctx.font = `700 ${exportMode ? 11 : 9}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = "center";
+  ctx.fillText(serialText, footerCenterX, stripY + Math.floor(stripH / 2) + 4);
 
   ctx.restore();
 }
 
 export function measureRunCard(width: number, height: number, mode: RunCardMode = "screen"): RunCardFrame {
   if (mode === "export") {
-    const cardW = Math.min(width * 0.9, 1080);
-    const cardH = Math.min(height * 0.78, 1320);
+    const maxW = width * 0.94;
+    const maxH = height * 0.92;
+    let cardW = maxW;
+    let cardH = cardW / RUN_CARD_ASPECT_RATIO;
+    if (cardH > maxH) {
+      cardH = maxH;
+      cardW = cardH * RUN_CARD_ASPECT_RATIO;
+    }
     return {
       x: Math.floor((width - cardW) / 2),
-      y: Math.floor((height - cardH) / 2 - height * 0.01),
-      w: cardW,
-      h: cardH,
+      y: Math.floor((height - cardH) / 2),
+      w: Math.floor(cardW),
+      h: Math.floor(cardH),
     };
   }
 
   const maxW = width * 0.86;
-  const maxH = height * 0.68;
-  const scale = clamp(
-    Math.min(maxW / SCREEN_CARD_BASE_WIDTH, maxH / SCREEN_CARD_BASE_HEIGHT),
-    0.58,
-    1,
-  );
-  const cardW = Math.floor(SCREEN_CARD_BASE_WIDTH * scale);
-  const cardH = Math.floor(SCREEN_CARD_BASE_HEIGHT * scale);
+  const maxH = height * 0.62;
+  let cardW = maxW;
+  let cardH = cardW / RUN_CARD_ASPECT_RATIO;
+  if (cardH > maxH) {
+    cardH = maxH;
+    cardW = cardH * RUN_CARD_ASPECT_RATIO;
+  }
+
+  const minScale = 0.58;
+  const minW = SCREEN_CARD_BASE_WIDTH * minScale;
+  const minH = SCREEN_CARD_BASE_HEIGHT * minScale;
+  if (cardW < minW || cardH < minH) {
+    const scale = clamp(
+      Math.min(maxW / SCREEN_CARD_BASE_WIDTH, maxH / SCREEN_CARD_BASE_HEIGHT),
+      minScale,
+      1,
+    );
+    cardW = SCREEN_CARD_BASE_WIDTH * scale;
+    cardH = SCREEN_CARD_BASE_HEIGHT * scale;
+  }
+
+  cardW = Math.floor(cardW);
+  cardH = Math.floor(cardH);
   const yOffset = Math.floor(height * 0.01);
   return {
     x: Math.floor((width - cardW) / 2),
@@ -583,220 +522,285 @@ export function measureRunCard(width: number, height: number, mode: RunCardMode 
   };
 }
 
-function drawStatPill(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  label: string,
-  value: string,
-  accent: string,
-  compact = false,
-): void {
-  const pillH = compact ? 42 : 48;
-  const radius = compact ? 13 : 16;
-  ctx.fillStyle = "rgba(255,255,255,0.05)";
-  roundRect(ctx, x, y, w, pillH, radius);
-  ctx.fill();
-  ctx.strokeStyle = withAlpha(accent, 0.22);
-  ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, pillH, radius);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.font = `700 ${compact ? 7 : 8}px 'JetBrains Mono', monospace`;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(label, x + (compact ? 11 : 14), y + (compact ? 7 : 8));
-
-  ctx.fillStyle = "#f8f6ff";
-  ctx.font = `800 ${compact ? 15 : 17}px 'Space Grotesk', 'Segoe UI', sans-serif`;
-  ctx.fillText(value, x + (compact ? 11 : 14), y + (compact ? 19 : 22));
-}
-
-function drawSectionLabel(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  label: string,
-  accent: string,
-  compact = false,
-): void {
-  ctx.fillStyle = withAlpha(accent, 0.94);
-  ctx.font = `700 ${compact ? 8 : 10}px 'JetBrains Mono', monospace`;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText(label, x, y);
-  ctx.fillStyle = "rgba(255,255,255,0.14)";
-  ctx.fillRect(x, y + (compact ? 5 : 6), compact ? 104 : 132, 1);
-}
-
-function drawSkillGrid(
-  ctx: CanvasRenderingContext2D,
-  skills: RunCardSkill[],
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  compact = false,
-): void {
-  const cappedSkills = skills.slice(0, RUN_CARD_MAX_SKILLS);
-  const chipsPerRow = compact ? 2 : (width < 330 ? 2 : 3);
-  const chipGap = compact ? 8 : 12;
-  const chipW = Math.floor((width - chipGap * (chipsPerRow - 1)) / chipsPerRow);
-  const chipH = compact ? 40 : 46;
-  const maxRows = Math.max(1, Math.floor(height / (chipH + chipGap)));
-  const visible = cappedSkills.slice(0, maxRows * chipsPerRow);
-
-  let chipIndex = 0;
-  for (const skill of visible) {
-    const row = Math.floor(chipIndex / chipsPerRow);
-    const col = chipIndex % chipsPerRow;
-    const chipX = x + col * (chipW + chipGap);
-    const chipY = y + row * (chipH + chipGap);
-    const accent = skill.kind === "weapon" ? "#7b8cff" : "#7fe0a8";
-    drawSkillChip(ctx, chipX, chipY, chipW, chipH, skill, accent, compact);
-    chipIndex += 1;
-  }
-
-  if (skills.length > visible.length) {
-    const overflowRow = Math.floor(visible.length / chipsPerRow);
-    const overflowY = y + overflowRow * (chipH + chipGap);
-    ctx.fillStyle = "rgba(255,255,255,0.48)";
-    ctx.font = `600 ${compact ? 9 : 10}px 'JetBrains Mono', monospace`;
-    const remaining = skills.length - visible.length;
-    ctx.fillText(`+${remaining} more`, x, overflowY + chipH + (compact ? 9 : 12));
-  }
-}
-
-function drawSkillChip(
+function drawCompactSummaryTile(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
   h: number,
-  skill: RunCardSkill,
+  label: string,
+  headline: string,
+  subtitle: string,
   accent: string,
-  compact = false,
+  wide = false,
+  kicker?: string,
+  minimal = false,
 ): void {
+  const shortTile = h < 112;
+  const ultraCompactTile = h < 74;
   const fill = ctx.createLinearGradient(x, y, x, y + h);
   fill.addColorStop(0, "rgba(255,255,255,0.06)");
   fill.addColorStop(1, "rgba(255,255,255,0.02)");
   ctx.fillStyle = fill;
-  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
+  roundRect(ctx, x, y, w, h, wide ? 14 : 12);
   ctx.fill();
+
   ctx.strokeStyle = withAlpha(accent, 0.28);
   ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
+  roundRect(ctx, x, y, w, h, wide ? 14 : 12);
   ctx.stroke();
 
-  const glyph = glyphForSkill(skill);
-  if (compact) {
-    drawGlyphBadge(ctx, x + 10, y + 11, 14, glyph, accent);
-  } else {
-    drawGlyphBadge(ctx, x + 14, y + 14, 18, glyph, accent);
-  }
+  const padX = wide ? 14 : 11;
+  const headlineMaxW = w - padX * 2;
 
-  ctx.fillStyle = withAlpha(accent, 0.88);
-  ctx.font = `700 ${compact ? 7 : 8}px 'JetBrains Mono', monospace`;
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  const tagX = compact ? x + 29 : x + 38;
-  ctx.fillText(skill.kind === "weapon" ? "WEAPON" : "PASSIVE", tagX, y + (compact ? 6 : 8));
+  ctx.fillStyle = withAlpha(accent, 0.92);
+  ctx.font = `700 ${shortTile ? 8 : (wide ? 10 : 9)}px 'JetBrains Mono', monospace`;
+  ctx.fillText(label, x + padX, y + (shortTile ? 6 : (wide ? 9 : 8)));
 
-  ctx.fillStyle = "#f8f6ff";
-  const skillFont = compact ? "700 10px 'Space Grotesk', 'Segoe UI', sans-serif" : "700 12px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.font = skillFont;
-  const safeLabel = clampTextTail(ctx, skill.label, w - (compact ? 62 : 82), skillFont);
-  ctx.fillText(safeLabel, tagX, y + (compact ? 18 : 24));
+  if (kicker && !shortTile && !minimal) {
+    ctx.fillStyle = "rgba(219,228,255,0.6)";
+    ctx.font = `600 ${wide ? 9 : 8}px 'JetBrains Mono', monospace`;
+    ctx.fillText(clampTextTail(ctx, kicker, headlineMaxW, ctx.font), x + padX, y + (wide ? 24 : 22));
+  }
 
-  ctx.fillStyle = "rgba(219,228,255,0.68)";
-  ctx.font = `700 ${compact ? 8 : 9}px 'JetBrains Mono', monospace`;
-  const levelText = `Lv ${skill.level}`;
-  const levelX = x + w - (compact ? 6 : 10) - ctx.measureText(levelText).width;
-  ctx.fillText(levelText, levelX, y + h - (compact ? 9 : 11));
+  const headlineTop = shortTile
+    ? (wide ? 22 : 18)
+    : kicker
+      ? (minimal ? (wide ? 30 : 26) : (wide ? 40 : 36))
+      : (wide ? 30 : 26);
+  const headlineSize = fitTextWidth(
+    ctx,
+    headline,
+    headlineMaxW,
+    shortTile ? (wide ? 22 : 18) : (wide ? 34 : 26),
+    shortTile ? (wide ? 11 : 10) : (wide ? 16 : 13),
+    "900",
+    "'Space Grotesk', 'Segoe UI', sans-serif",
+  );
+  ctx.fillStyle = "#f9fbff";
+  ctx.font = `900 ${headlineSize}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.fillText(headline, x + padX, y + headlineTop);
+
+  if (!minimal && !ultraCompactTile) {
+    ctx.fillStyle = "rgba(219,228,255,0.7)";
+    const subtitleSize = shortTile ? (wide ? 9 : 8) : (wide ? 10 : 9);
+    ctx.font = `600 ${subtitleSize}px 'JetBrains Mono', monospace`;
+    const safeSubtitle = clampTextTail(ctx, subtitle, headlineMaxW, ctx.font);
+    ctx.fillText(safeSubtitle, x + padX, y + h - (shortTile ? (wide ? 12 : 10) : (wide ? 18 : 14)));
+  }
 }
 
-function drawEnemyBreakdown(
+function drawRunicCorners(
   ctx: CanvasRenderingContext2D,
-  enemies: RunCardEnemyKill[],
-  x: number,
-  y: number,
-  width: number,
-  height: number,
+  cardX: number,
+  cardY: number,
+  cardW: number,
+  cardH: number,
+  theme: RunCardTheme,
   accent: string,
-  compact = false,
 ): void {
-  const cappedEnemies = enemies.slice(0, RUN_CARD_MAX_ENEMIES);
-  const rowH = compact ? 34 : 38;
-  const rows = Math.max(1, Math.floor(height / rowH));
-  const visible = cappedEnemies.slice(0, rows);
-  const maxCount = Math.max(1, ...visible.map((entry) => entry.count));
+  const corners: Array<[number, number, number, number, 1 | -1, 1 | -1]> = [
+    [cardX + 18, cardY + 18, 32, 32, 1, 1],
+    [cardX + cardW - 50, cardY + 18, 32, 32, -1, 1],
+    [cardX + 18, cardY + cardH - 50, 32, 32, 1, -1],
+    [cardX + cardW - 50, cardY + cardH - 50, 32, 32, -1, -1],
+  ];
 
-  if (visible.length === 0) {
-    ctx.fillStyle = "rgba(255,255,255,0.42)";
-    ctx.font = `600 ${compact ? 10 : 12}px 'Inter', sans-serif`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText("No enemy kills recorded yet.", x, y + 16);
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    ctx.fillRect(x, y + 26, width * 0.72, 1);
-    return;
-  }
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const [x, y, w, h, dx, dy] of corners) {
+    const grad = ctx.createLinearGradient(x, y, x + w * dx, y + h * dy);
+    grad.addColorStop(0, withAlpha(accent, 0.9));
+    grad.addColorStop(1, withAlpha(theme.secondary, 0.12));
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.2;
 
-  visible.forEach((entry, index) => {
-    const rowY = y + index * rowH;
-    const rowFill = ctx.createLinearGradient(x, rowY, x, rowY + rowH - 10);
-    rowFill.addColorStop(0, "rgba(255,255,255,0.06)");
-    rowFill.addColorStop(1, "rgba(255,255,255,0.03)");
-    ctx.fillStyle = rowFill;
-    roundRect(ctx, x, rowY, width, rowH - (compact ? 8 : 10), compact ? 9 : 12);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,107,122,0.18)";
-    ctx.lineWidth = 1;
-    roundRect(ctx, x, rowY, width, rowH - (compact ? 8 : 10), compact ? 9 : 12);
+    ctx.beginPath();
+    ctx.moveTo(x, y + h * 0.15);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + w * 0.15, y);
     ctx.stroke();
 
-    const glyph = glyphForEnemy(entry);
-    if (compact) {
-      drawGlyphBadge(ctx, x + 10, rowY + 9, 14, glyph, accent);
-    } else {
-      drawGlyphBadge(ctx, x + 14, rowY + 11, 18, glyph, accent);
-    }
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.35, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + h * 0.35);
+    ctx.stroke();
 
-    ctx.fillStyle = "#f9fbff";
-    const labelFont = compact ? "700 10px 'Inter', sans-serif" : "700 11px 'Inter', sans-serif";
-    ctx.font = labelFont;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    const labelMaxW = width - (compact ? 92 : 100);
-    const safeEnemyLabel = clampTextTail(ctx, entry.label, labelMaxW, labelFont);
-    ctx.fillText(safeEnemyLabel, x + (compact ? 30 : 40), rowY + (compact ? 11 : 12));
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.15, y + h * 0.75);
+    ctx.lineTo(x + w * 0.45, y + h * 0.45);
+    ctx.lineTo(x + w * 0.75, y + h * 0.75);
+    ctx.stroke();
 
-    const countText = entry.count.toLocaleString();
-    ctx.fillStyle = "#ffd86b";
-    ctx.font = `800 ${compact ? 11 : 12}px 'JetBrains Mono', monospace`;
-    ctx.fillText(countText, x + width - (compact ? 10 : 14) - ctx.measureText(countText).width, rowY + (compact ? 11 : 12));
-
-    const barX = x + (compact ? 9 : 12);
-    const barY = rowY + (compact ? 23 : 27);
-    const barW = width - (compact ? 18 : 24);
-    const barRatio = entry.count / maxCount;
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    roundRect(ctx, barX, barY, barW, compact ? 3 : 4, 99);
+    ctx.save();
+    ctx.shadowColor = withAlpha(theme.primary, 0.45);
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = withAlpha(theme.primary, 0.12);
+    ctx.beginPath();
+    ctx.arc(x + w * 0.52, y + h * 0.52, 2.4, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = withAlpha("#ff6b7a", 0.58);
-    roundRect(ctx, barX, barY, Math.max(compact ? 6 : 8, barW * barRatio), compact ? 3 : 4, 99);
-    ctx.fill();
-  });
-
-  if (enemies.length > visible.length) {
-    ctx.fillStyle = "rgba(255,255,255,0.48)";
-    ctx.font = `600 ${compact ? 9 : 10}px 'JetBrains Mono', monospace`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(`+${enemies.length - visible.length} more`, x, y + visible.length * rowH + (compact ? 6 : 8));
+    ctx.restore();
   }
+  ctx.restore();
+}
+
+function drawWaxSealPlaceholder(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  theme: RunCardTheme,
+): void {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.shadowColor = withAlpha(theme.primary, 0.5);
+  ctx.shadowBlur = 14;
+  const fill = ctx.createRadialGradient(
+    centerX - radius * 0.2,
+    centerY - radius * 0.2,
+    radius * 0.15,
+    centerX,
+    centerY,
+    radius,
+  );
+  fill.addColorStop(0, "rgba(255,255,255,0.16)");
+  fill.addColorStop(0.45, withAlpha(theme.primary, 0.42));
+  fill.addColorStop(1, "rgba(10, 12, 18, 0.92)");
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = withAlpha(theme.gold, 0.72);
+  ctx.lineWidth = Math.max(1.1, radius * 0.08);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius * 0.8, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = withAlpha(theme.primary, 0.88);
+  ctx.lineWidth = Math.max(1, radius * 0.055);
+  ctx.beginPath();
+  ctx.moveTo(centerX - radius * 0.34, centerY);
+  ctx.lineTo(centerX + radius * 0.34, centerY);
+  ctx.moveTo(centerX, centerY - radius * 0.34);
+  ctx.lineTo(centerX, centerY + radius * 0.34);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.22)";
+  ctx.beginPath();
+  ctx.arc(centerX - radius * 0.26, centerY - radius * 0.26, radius * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawIdentityLine(
+  ctx: CanvasRenderingContext2D,
+  label: string | null,
+  value: string,
+  x: number,
+  y: number,
+  w: number,
+  accent: string,
+  labelSize: number,
+  valueSize: number,
+  lineGap: number,
+): void {
+  const safeValue = clampTextTail(
+    ctx,
+    value,
+    w,
+    `800 ${valueSize}px 'Space Grotesk', 'Segoe UI', sans-serif`,
+  );
+
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  const valueY = label ? y + labelSize + lineGap : y;
+  if (label) {
+    ctx.fillStyle = withAlpha(accent, 0.86);
+    ctx.font = `700 ${labelSize}px 'JetBrains Mono', monospace`;
+    ctx.fillText(label, x, y);
+  }
+  ctx.fillStyle = "rgba(247, 249, 255, 0.98)";
+  ctx.font = `800 ${valueSize}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.fillText(safeValue, x, valueY);
+  ctx.restore();
+}
+
+function drawStatsPlaque(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  summary: RunCardSummary,
+  exportMode: boolean,
+): void {
+  ctx.save();
+  const bg = ctx.createLinearGradient(x, y, x, y + h);
+  bg.addColorStop(0, "rgba(255,255,255,0.09)");
+  bg.addColorStop(0.62, "rgba(255,255,255,0.045)");
+  bg.addColorStop(1, "rgba(0,0,0,0.2)");
+  ctx.fillStyle = bg;
+  roundRect(ctx, x, y, w, h, 24);
+  ctx.fill();
+
+  const brass = ctx.createLinearGradient(x, y, x + w, y + h);
+  brass.addColorStop(0, "rgba(215, 178, 107, 0.46)");
+  brass.addColorStop(0.5, "rgba(120, 226, 184, 0.18)");
+  brass.addColorStop(1, "rgba(93, 68, 31, 0.54)");
+  ctx.strokeStyle = brass;
+  ctx.lineWidth = 1.3;
+  roundRect(ctx, x, y, w, h, 24);
+  ctx.stroke();
+
+  const innerGlow = ctx.createLinearGradient(x, y, x + w, y + h);
+  innerGlow.addColorStop(0, "rgba(255,255,255,0.08)");
+  innerGlow.addColorStop(0.5, "rgba(127,224,168,0.03)");
+  innerGlow.addColorStop(1, "rgba(0,0,0,0.1)");
+  ctx.fillStyle = innerGlow;
+  roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 22);
+  ctx.fill();
+
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(235, 222, 196, 0.74)";
+  ctx.font = `700 ${exportMode ? 15 : 14}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = "left";
+  ctx.fillText("FINAL SCORE", x + 22, y + 18);
+
+  const scoreSize = fitTextWidth(
+    ctx,
+    summary.score.toLocaleString(),
+    w - 44,
+    exportMode ? 60 : 52,
+    exportMode ? 34 : 30,
+    "900",
+    "'Space Grotesk', 'Segoe UI', sans-serif",
+  );
+  ctx.fillStyle = "rgba(248, 250, 255, 0.98)";
+  ctx.font = `900 ${scoreSize}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.textAlign = "right";
+  ctx.shadowColor = "rgba(118, 245, 186, 0.4)";
+  ctx.shadowBlur = exportMode ? 16 : 12;
+  ctx.fillStyle = "#7cf6bf";
+  ctx.fillText(summary.score.toLocaleString(), x + w - 22, y + 54);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "rgba(235, 222, 196, 0.74)";
+  ctx.font = `700 ${exportMode ? 13 : 12}px 'JetBrains Mono', monospace`;
+  ctx.textAlign = "left";
+  ctx.fillText("KILLS", x + 22, y + h - 56);
+
+  ctx.fillStyle = "#7cf6bf";
+  ctx.font = `900 ${exportMode ? 24 : 22}px 'Space Grotesk', 'Segoe UI', sans-serif`;
+  ctx.textAlign = "right";
+  ctx.fillText(summary.kills.toLocaleString(), x + w - 22, y + h - 62);
+
+  ctx.restore();
 }
 
 function drawAvatar(
@@ -887,7 +891,6 @@ function drawAvatar(
   ctx.beginPath();
   ctx.arc(x + size / 2, y + size / 2, size * 0.88, 0, Math.PI * 2);
   ctx.fill();
-
 }
 
 function drawRunSigil(
@@ -956,120 +959,6 @@ function drawRunSigil(
   ctx.restore();
 }
 
-function drawMetadataBand(
-  ctx: CanvasRenderingContext2D,
-  summary: RunCardSummary,
-  cardX: number,
-  cardW: number,
-  bandY: number,
-  chipH: number,
-  serialY: number,
-  theme: RunCardTheme,
-  compact = false,
-): void {
-  const sideInset = compact ? 16 : 24;
-  const bandX = cardX + sideInset;
-  const bandW = cardW - sideInset * 2;
-  const chipGap = compact ? 8 : 10;
-  const chipW = Math.floor((bandW - chipGap * 2) / 3);
-
-  const chips = [
-    { label: "CHAIN", value: "Ritual Chain" },
-    { label: "COLLECTION", value: "Ritualist Never Sleeps" },
-    { label: "TOKEN", value: "Run Card" },
-  ];
-
-  ctx.save();
-  for (let idx = 0; idx < chips.length; idx += 1) {
-    const chip = chips[idx];
-    if (!chip) {
-      continue;
-    }
-
-    const chipX = bandX + idx * (chipW + chipGap);
-    drawMetaChip(ctx, chipX, bandY, chipW, chipH, chip.label, chip.value, theme, compact);
-  }
-
-  ctx.fillStyle = "rgba(255,255,255,0.48)";
-  const serialFont = compact ? "600 8px 'JetBrains Mono', monospace" : "600 10px 'JetBrains Mono', monospace";
-  ctx.font = serialFont;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  const serialText = `SERIAL ${summary.serialNumber}  •  MINTED ${formatUtcTimestamp(summary.capturedAt)}`;
-  const safeSerial = clampTextTail(ctx, serialText, cardW - sideInset * 2 - 8, serialFont);
-  ctx.fillText(
-    safeSerial,
-    cardX + cardW * 0.5,
-    serialY,
-  );
-  ctx.restore();
-}
-
-function drawMetaChip(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  label: string,
-  value: string,
-  theme: RunCardTheme,
-  compact = false,
-): void {
-  const fill = ctx.createLinearGradient(x, y, x, y + h);
-  fill.addColorStop(0, "rgba(255,255,255,0.06)");
-  fill.addColorStop(1, "rgba(255,255,255,0.025)");
-  ctx.fillStyle = fill;
-  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
-  ctx.fill();
-
-  ctx.strokeStyle = withAlpha(theme.primary, 0.22);
-  ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, h, compact ? 10 : 14);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,0.42)";
-  const labelFont = compact ? "700 7px 'JetBrains Mono', monospace" : "700 8px 'JetBrains Mono', monospace";
-  ctx.font = labelFont;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(label, x + (compact ? 9 : 12), y + (compact ? 7 : 9));
-
-  ctx.fillStyle = "#f9fbff";
-  const valueFont = compact ? "700 11px 'Space Grotesk', 'Segoe UI', sans-serif" : "700 13px 'Space Grotesk', 'Segoe UI', sans-serif";
-  ctx.font = valueFont;
-  const safeValue = clampTextTail(ctx, value, w - (compact ? 18 : 24), valueFont);
-  ctx.fillText(safeValue, x + (compact ? 9 : 12), y + (compact ? 18 : 22));
-}
-
-function drawGlyphBadge(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  size: number,
-  glyph: string,
-  accent: string,
-): void {
-  const fill = ctx.createRadialGradient(x + size * 0.35, y + size * 0.3, 2, x + size / 2, y + size / 2, size / 2);
-  fill.addColorStop(0, withAlpha(accent, 0.72));
-  fill.addColorStop(1, "rgba(4, 5, 8, 0.96)");
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = withAlpha(accent, 0.34);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.fillStyle = "#f9fbff";
-  ctx.font = `700 ${Math.max(9, Math.floor(size * 0.58))}px 'JetBrains Mono', monospace`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(glyph, x + size / 2, y + size / 2 + 0.5);
-}
-
 function drawPaperGrain(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1128,25 +1017,66 @@ function drawCardWatermark(
   cardY: number,
   cardW: number,
   cardH: number,
+  options: {
+    opacity?: number;
+    scale?: number;
+    centerXRatio?: number;
+    centerYRatio?: number;
+  } = {},
 ): void {
   const watermark = getCardWatermarkImage();
   if (!watermark) {
     return;
   }
 
-  const maxWidth = cardW * 1.5;
-  const maxHeight = cardH * 1.5;
-  const scale = Math.min(maxWidth / watermark.naturalWidth, maxHeight / watermark.naturalHeight);
-  const drawW = watermark.naturalWidth * scale;
-  const drawH = watermark.naturalHeight * scale;
-  const drawX = cardX + (cardW - drawW) / 2;
-  const drawY = cardY + (cardH - drawH) / 2 + cardH * 0.02;
+  const {
+    opacity = 0.06,
+    scale = 0.8,
+    centerXRatio = 0.5,
+    centerYRatio = 0.5,
+  } = options;
+  const maxWidth = cardW * scale;
+  const maxHeight = cardH * scale;
+  const imageScale = Math.min(maxWidth / watermark.naturalWidth, maxHeight / watermark.naturalHeight);
+  const drawW = watermark.naturalWidth * imageScale;
+  const drawH = watermark.naturalHeight * imageScale;
+  const drawX = cardX + cardW * centerXRatio - drawW / 2;
+  const drawY = cardY + cardH * centerYRatio - drawH / 2 + cardH * 0.015;
 
   ctx.save();
   roundRect(ctx, cardX + 2, cardY + 2, cardW - 4, cardH - 4, 26);
   ctx.clip();
-  ctx.globalAlpha = 0.1;
+  ctx.globalAlpha = opacity;
   ctx.drawImage(watermark, drawX, drawY, drawW, drawH);
+  ctx.restore();
+}
+
+function drawSummaryFrameOverlay(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const frameSheet = getUiFramesSheetImage();
+  if (!frameSheet) {
+    return;
+  }
+
+  // Atlas layout from manifest: 2 columns x 1 row, each frame 1024x256.
+  // Use modal_panel_frame (second cell) for subtle summary container polish.
+  const srcW = 1024;
+  const srcH = 256;
+  const srcX = 1024;
+  const srcY = 0;
+
+  ctx.save();
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.clip();
+  ctx.globalAlpha = 0.16;
+  ctx.globalCompositeOperation = "screen";
+  ctx.drawImage(frameSheet, srcX, srcY, srcW, srcH, x, y, w, h);
   ctx.restore();
 }
 
@@ -1166,28 +1096,20 @@ function getCardWatermarkImage(): HTMLImageElement | null {
   return ritualWatermarkImage;
 }
 
-function glyphForSkill(skill: RunCardSkill): string {
-  const label = skill.label.toLowerCase();
-  if (label.includes("lash") || label.includes("whip")) return "⟿";
-  if (label.includes("blade") || label.includes("shard")) return "✦";
-  if (label.includes("cross") || label.includes("sanct")) return "✠";
-  if (label.includes("tome") || label.includes("book")) return "☍";
-  if (label.includes("wand") || label.includes("bolt") || label.includes("beam")) return "⚡";
-  if (label.includes("aura") || label.includes("shield") || label.includes("ward")) return "◉";
-  if (label.includes("pool") || label.includes("curse") || label.includes("sigil")) return "◌";
-  if (skill.kind === "passive") return "✚";
-  return "✧";
-}
-
-function glyphForEnemy(entry: RunCardEnemyKill): string {
-  const label = entry.label.toLowerCase();
-  if (label.includes("boss") || label.includes("brute")) return "☠";
-  if (label.includes("fly") || label.includes("bat") || label.includes("drone")) return "✦";
-  if (label.includes("blob") || label.includes("slime")) return "◌";
-  if (label.includes("mage") || label.includes("witch")) return "✠";
-  if (label.includes("knight") || label.includes("guard")) return "⛨";
-  if (label.includes("fast") || label.includes("stalker")) return "➤";
-  return "◆";
+function getUiFramesSheetImage(): HTMLImageElement | null {
+  if (typeof Image === "undefined") {
+    return null;
+  }
+  if (!uiFramesSheetRequested) {
+    uiFramesSheetRequested = true;
+    const img = new Image();
+    img.src = UI_FRAMES_SHEET_SRC;
+    uiFramesSheetImage = img;
+  }
+  if (!uiFramesSheetImage || !uiFramesSheetImage.complete || uiFramesSheetImage.naturalWidth <= 0) {
+    return null;
+  }
+  return uiFramesSheetImage;
 }
 
 function pickRunCardTheme(summary: RunCardSummary): RunCardTheme {
@@ -1200,9 +1122,17 @@ function pickRunCardTheme(summary: RunCardSummary): RunCardTheme {
   return RUN_CARD_THEMES[0] ?? RUN_CARD_THEMES[0]!;
 }
 
-function formatUtcTimestamp(epochMs: number): string {
+function formatCardDateStamp(epochMs: number): string {
   const date = new Date(epochMs);
-  const year = date.getUTCFullYear();
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = String(date.getUTCFullYear()).padStart(4, "0");
+  return `${day}-${month}-${year}`;
+}
+
+function formatCardMintedStamp(epochMs: number): string {
+  const date = new Date(epochMs);
+  const year = String(date.getUTCFullYear()).padStart(4, "0");
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const day = String(date.getUTCDate()).padStart(2, "0");
   const hours = String(date.getUTCHours()).padStart(2, "0");
@@ -1228,27 +1158,6 @@ function createSeededRng(seed: number): () => number {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-function fitCenteredTitle(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  maxFontSize: number,
-  minFontSize: number,
-): void {
-  let fontSize = maxFontSize;
-  while (fontSize > minFontSize) {
-    ctx.font = `900 ${fontSize}px 'Cinzel', 'Times New Roman', serif`;
-    if (ctx.measureText(text).width <= maxWidth) {
-      break;
-    }
-    fontSize -= 1;
-  }
-
-  ctx.fillText(text, x, y);
 }
 
 function avatarInitials(displayName: string): string {
