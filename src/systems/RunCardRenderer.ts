@@ -489,8 +489,11 @@ export function measureRunCard(width: number, height: number, mode: RunCardMode 
     };
   }
 
-  const maxW = width * 0.86;
-  const maxH = height * 0.62;
+  const sidePad = clamp(width * 0.024, 12, 32);
+  const topInset = clamp(height * 0.17, 108, 154);
+  const bottomInset = clamp(height * 0.17, 110, 152);
+  const maxW = width - sidePad * 2;
+  const maxH = Math.max(220, height - topInset - bottomInset);
   let cardW = maxW;
   let cardH = cardW / RUN_CARD_ASPECT_RATIO;
   if (cardH > maxH) {
@@ -513,10 +516,12 @@ export function measureRunCard(width: number, height: number, mode: RunCardMode 
 
   cardW = Math.floor(cardW);
   cardH = Math.floor(cardH);
-  const yOffset = Math.floor(height * 0.01);
+  const minY = Math.floor(topInset);
+  const maxY = Math.max(minY, Math.floor(height - bottomInset - cardH));
+  const centeredY = Math.floor((height - cardH) / 2);
   return {
     x: Math.floor((width - cardW) / 2),
-    y: Math.floor((height - cardH) / 2 + yOffset),
+    y: clamp(centeredY, minY, maxY),
     w: cardW,
     h: cardH,
   };

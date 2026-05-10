@@ -65,16 +65,24 @@ export class SpriteRegistry {
     if (handle === undefined) {
       return false;
     }
+    const drawX = Math.round(x);
+    const drawY = Math.round(y);
+    const drawW = Math.max(1, Math.round(w));
+    const drawH = Math.max(1, Math.round(h));
+    const srcX = Math.round(handle.rect.x);
+    const srcY = Math.round(handle.rect.y);
+    const srcW = Math.max(1, Math.round(handle.rect.w));
+    const srcH = Math.max(1, Math.round(handle.rect.h));
     ctx.drawImage(
       handle.image,
-      handle.rect.x,
-      handle.rect.y,
-      handle.rect.w,
-      handle.rect.h,
-      x,
-      y,
-      w,
-      h,
+      srcX,
+      srcY,
+      srcW,
+      srcH,
+      drawX,
+      drawY,
+      drawW,
+      drawH,
     );
     return true;
   }
@@ -99,4 +107,3 @@ export class SpriteRegistry {
     return normalized.startsWith("/") ? normalized : `/${normalized}`;
   }
 }
-

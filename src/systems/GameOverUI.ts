@@ -27,6 +27,8 @@ export interface GameOverUICallbacks {
   onQuitConfirmed: () => void;
   onMintCard: (summary: RunCardSummary) => void;
   isMintEnabled?: () => boolean;
+  isMintBusy?: () => boolean;
+  getMintButtonLabel?: () => string;
   getMintDisabledReason?: () => string | null;
 }
 
@@ -62,7 +64,7 @@ export class GameOverUI {
       const cardButtons = frame ? this.getCardActions(width, height, frame) : null;
       if (cardButtons && this.summary !== null && this.hitTest(mouseX, mouseY, cardButtons.mint)) {
         event.preventDefault();
-        if (!this.canMintCard()) {
+        if (!this.canMintCard() || this.isMintBusy()) {
           console.warn("[mint-disabled]", this.getMintDisabledReason());
           return;
         }
@@ -276,21 +278,26 @@ export class GameOverUI {
     const compact = this.isCompactLayout(width, height);
     const { mint, share, download } = this.getCardActions(width, height, frame);
     const mintEnabled = this.canMintCard();
+    const mintBusy = this.isMintBusy();
+    const mintLabel = mintBusy
+      ? "Connecting wallet..."
+      : (this.callbacks.getMintButtonLabel?.()
+        ?? (mintEnabled ? "Mint this Card" : "Mint Unavailable"));
 
     this.drawButton(
       ctx,
       mint,
-      mintEnabled ? "Mint this Card" : "Mint Unavailable",
+      mintLabel,
       "#41d37c",
       compact ? 13 : 14,
       true,
       this.isPressed("card-mint"),
-      !mintEnabled,
+      !mintEnabled || mintBusy,
     );
     this.drawButton(ctx, share, "Share to X", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-share"));
     this.drawButton(ctx, download, "Download Card", "#41d37c", compact ? 13 : 14, true, this.isPressed("card-download"));
 
-    if (!mintEnabled) {
+    if (!mintEnabled && !mintBusy) {
       const reason = this.callbacks.getMintDisabledReason?.();
       if (reason) {
         const hintMaxWidth = mint.w * 2 + 14;
@@ -530,6 +537,7 @@ export class GameOverUI {
     host.style.top = `${frame.y}px`;
     host.style.width = `${frame.w}px`;
     host.style.height = `${frame.h}px`;
+    host.style.aspectRatio = "3 / 2";
     host.style.maxWidth = "none";
 
     if (!this.cardRoot) {
@@ -872,6 +880,10 @@ export class GameOverUI {
 
   private canMintCard(): boolean {
     return this.callbacks.isMintEnabled?.() ?? true;
+  }
+
+  private isMintBusy(): boolean {
+    return this.callbacks.isMintBusy?.() ?? false;
   }
 
   private getMintDisabledReason(): string {

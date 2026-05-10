@@ -1,9 +1,18 @@
 import type { Player } from "../entities/Player";
+import { requireWeapon } from "../data/weapons";
 import type { WeaponRuntimeContext } from "../weapons/WeaponBase";
 import {
   createWeaponBehaviour,
   type WeaponBehaviour,
 } from "../weapons/WeaponBehaviourFactory";
+
+export interface WeaponHudSkill {
+  id: string;
+  name: string;
+  level: number;
+  ready: boolean;
+  cooldownRemainingMs: number;
+}
 
 /**
  * Maintains scripted weapon behaviours aligned with Survivor lanes.
@@ -68,5 +77,19 @@ export class WeaponSystem {
       this.rebuildBehaviourTable();
     }
     return evolved;
+  }
+
+  getHudSkills(): WeaponHudSkill[] {
+    return this.bearer.weaponLanes.map((lane) => {
+      const script = this.behaviourByWeaponId.get(lane.id);
+      const hud = script?.getHudState?.();
+      return {
+        id: lane.id,
+        name: requireWeapon(lane.id).name,
+        level: lane.level,
+        ready: hud?.ready ?? true,
+        cooldownRemainingMs: hud?.cooldownRemainingMs ?? 0,
+      };
+    });
   }
 }

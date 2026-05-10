@@ -37,6 +37,7 @@ import { WeaponSystem } from "./systems/WeaponSystem";
 import { ScoreSystem } from "./systems/ScoreSystem";
 import { HudRenderer, type HudPresentationState } from "./ui/HUD";
 import { SoundManager } from "./audio/SoundManager";
+import { AudioManager } from "./audio/AudioManager";
 import { WalletContext } from "./web3";
 import {
   CANVAS_DEFAULT_HEIGHT_PX,
@@ -140,6 +141,9 @@ const ENEMY_WALK_ROW_BY_FACING: Record<FacingDirection, number> = {
   east: 3,
 };
 
+const TERRAIN_TILE_SOURCE_INSET_PX = 1;
+const TERRAIN_TILE_OVERDRAW_PX = 1;
+
 const PLAYER_FRAME_COUNT = 4;
 const PLAYER_FULL_DIRECTIONAL_ROWS = 4;
 const PLAYER_HURT_FRAME_INDEX = 2;
@@ -148,6 +152,7 @@ const PLAYER_HURT_FRAME_INDEX = 2;
  * Orchestrates the vertical slice spanning movement, combat, XP, HUD, and level pauses.
  */
 export class Game {
+  private readonly bgm = AudioManager.getInstance();
   private readonly canvas: HTMLCanvasElement;
 
   private readonly loop: GameLoop;
@@ -437,6 +442,7 @@ export class Game {
    */
   start(): void {
     this.sound.unlock();
+    this.bgm.requestBgm("gameBGM");
     this.loop.start();
     Debug.log("Game loop running");
   }
@@ -453,6 +459,7 @@ export class Game {
     const previewScore = this.scoreSystem.getLiveScore(this.player.survivorLevel);
     this.gameOverResolved = true;
     this.gameOverUi.present(this.buildRunCardSummary(previewScore, capturedAt));
+    this.bgm.requestBgm("gameOverBGM");
     this.sound.play("gameOver");
   }
 
@@ -474,6 +481,7 @@ export class Game {
     window.removeEventListener("resize", this.onResizeBound);
     this.loop.stop();
     this.input.dispose();
+    this.hud.dispose();
     this.levelUi.dispose();
     this.gameOverUi.dispose();
     Debug.log("Game disposed");
@@ -509,6 +517,7 @@ export class Game {
       );
       this.gameOverResolved = true;
       this.gameOverUi.present(this.buildRunCardSummary(finalScore, capturedAt));
+      this.bgm.requestBgm("gameOverBGM");
       this.sound.play("gameOver");
     }
 
@@ -831,9 +840,15 @@ export class Game {
       xpBudget: Math.max(1, this.player.xpBudgetForNextLevel),
       elapsedMs: this.elapsedMs,
       score: this.scoreSystem.getLiveScore(this.player.survivorLevel),
+      skillSlots: this.weaponSystem.getHudSkills(),
+      radarPoints: this.buildHudRadarPoints(),
     };
 
-    this.hud.draw(ctx, cssW, cssH, snapshot, this.sprites);
+    const shouldRenderHud = !this.gameOverUi.isBannerOpen() && this.player.hp > 0;
+    this.hud.setVisible(shouldRenderHud);
+    if (shouldRenderHud) {
+      this.hud.draw(ctx, cssW, cssH, snapshot);
+    }
     this.levelUi.render(ctx, cssW, cssH);
     this.gameOverUi.render(ctx, cssW, cssH);
   }
@@ -970,6 +985,47 @@ export class Game {
     return true;
   }
 
+  private buildHudRadarPoints(): Array<{ x: number; y: number; type?: "enemy" | "pickup" }> {
+    const points: Array<{ x: number; y: number; type?: "enemy" | "pickup" }> = [];
+    const radarRange = 720;
+
+    this.enemyPool.forEachActive((enemy) => {
+      if (points.length >= 14) {
+        return;
+      }
+      const dx = enemy.x - this.player.x;
+      const dy = enemy.y - this.player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > radarRange || dist <= 0.001) {
+        return;
+      }
+      points.push({
+        x: clampScalar(dx / radarRange, -1, 1),
+        y: clampScalar(dy / radarRange, -1, 1),
+        type: "enemy",
+      });
+    });
+
+    this.pickupPool.forEachActive((pickup) => {
+      if (points.length >= 18) {
+        return;
+      }
+      const dx = pickup.x - this.player.x;
+      const dy = pickup.y - this.player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > radarRange || dist <= 0.001) {
+        return;
+      }
+      points.push({
+        x: clampScalar(dx / radarRange, -1, 1),
+        y: clampScalar(dy / radarRange, -1, 1),
+        type: "pickup",
+      });
+    });
+
+    return points;
+  }
+
   private drawGeneratedTerrain(ctx: CanvasRenderingContext2D): boolean {
     if (this.sprites.getSprite("base_floor") === undefined) {
       return false;
@@ -1052,14 +1108,33 @@ export class Game {
       return true;
     }
 
-    return this.sprites.drawSprite(
-      ctx,
-      tileId,
-      drawX,
-      drawY,
-      tileSize,
-      tileSize,
+    const handle = this.sprites.getSprite(tileId);
+    if (handle === undefined) {
+      return false;
+    }
+
+    const srcInsetX = Math.min(TERRAIN_TILE_SOURCE_INSET_PX, Math.floor((handle.rect.w - 1) / 2));
+    const srcInsetY = Math.min(TERRAIN_TILE_SOURCE_INSET_PX, Math.floor((handle.rect.h - 1) / 2));
+    const srcX = Math.round(handle.rect.x + srcInsetX);
+    const srcY = Math.round(handle.rect.y + srcInsetY);
+    const srcW = Math.max(1, Math.round(handle.rect.w - srcInsetX * 2));
+    const srcH = Math.max(1, Math.round(handle.rect.h - srcInsetY * 2));
+    const destX = Math.round(drawX - TERRAIN_TILE_OVERDRAW_PX);
+    const destY = Math.round(drawY - TERRAIN_TILE_OVERDRAW_PX);
+    const destSize = Math.max(1, Math.round(tileSize + TERRAIN_TILE_OVERDRAW_PX * 2));
+
+    ctx.drawImage(
+      handle.image,
+      srcX,
+      srcY,
+      srcW,
+      srcH,
+      destX,
+      destY,
+      destSize,
+      destSize,
     );
+    return true;
   }
 
   private drawSideWallTile(

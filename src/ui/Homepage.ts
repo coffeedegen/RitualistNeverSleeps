@@ -7,6 +7,7 @@ import {
   renderMainMenuScreen,
 } from "./homepage/homepageScreens";
 import { WalletContext } from "../web3/WalletContext";
+import { AudioManager } from "../audio/AudioManager";
 
 export interface HomepageCallbacks {
   onInitiateRitual: () => void;
@@ -14,6 +15,7 @@ export interface HomepageCallbacks {
 }
 
 export class Homepage {
+  private readonly bgm = AudioManager.getInstance();
   private readonly overlay: HTMLDivElement;
   private walletAddress: string | null = null;
   private callbacks: HomepageCallbacks;
@@ -37,6 +39,7 @@ export class Homepage {
     this.renderMainMenu();
     document.body.appendChild(this.overlay);
     this.attachWalletMenu();
+    this.bgm.requestBgm("titleBGM");
   }
 
   private renderMainMenu(): void {

@@ -259,7 +259,7 @@ export default function MintableCard({
         ? "min-h-[100px]"
         : "min-h-[118px]";
   const avatarSize = exportMode ? "h-32 w-32" : narrow ? "h-22 w-22" : compact ? "h-26 w-26" : "h-30 w-30";
-  const rootSizeClass = exportMode ? "w-full" : "h-full w-full";
+  const rootSizeClass = exportMode ? "w-full" : "h-full w-full aspect-[3/2]";
   const outerPaddingClass = exportMode ? "p-4 sm:p-5" : "p-4 sm:p-4";
   const shellHeightClass = exportMode ? "flex flex-col" : "flex h-full flex-col";
   const footerSpacingClass = exportMode ? "pt-4" : "mt-auto pt-3";

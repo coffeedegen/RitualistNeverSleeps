@@ -26,10 +26,16 @@ let weaponIconsSheetImage: HTMLImageElement | null = null;
 let weaponIconsSheetRequested = false;
 
 /** Interface implemented by authored weapon behaviours. */
+export interface WeaponHudState {
+  ready: boolean;
+  cooldownRemainingMs: number;
+}
+
 export interface WeaponBehaviour {
   readonly weaponId: string;
   tick(ctx: WeaponRuntimeContext, weaponLevel: number): void;
   renderWorld?(ctx: CanvasRenderingContext2D): void;
+  getHudState?(): WeaponHudState;
 }
 
 export function createWeaponBehaviour(weaponId: string): WeaponBehaviour {
@@ -95,6 +101,13 @@ abstract class BehaviourBase implements WeaponBehaviour {
     if (this.cadenceRemainMs > 0) {
       this.cadenceRemainMs = Math.max(0, this.cadenceRemainMs - deltaMs);
     }
+  }
+
+  getHudState(): WeaponHudState {
+    return {
+      ready: this.cadenceRemainMs <= 0,
+      cooldownRemainingMs: Math.max(0, this.cadenceRemainMs),
+    };
   }
 }
 
@@ -766,6 +779,15 @@ class OrbitalLiturgyBehaviour extends BehaviourBase {
   private activeRemainMs = 0;
 
   private orbitPhaseRad = 0;
+
+  override getHudState(): WeaponHudState {
+    const coolingDown = this.cadenceRemainMs > 0;
+    const active = this.activeRemainMs > 0;
+    return {
+      ready: !coolingDown && !active,
+      cooldownRemainingMs: Math.max(0, active ? this.activeRemainMs : this.cadenceRemainMs),
+    };
+  }
 
   override tick(ctx: WeaponRuntimeContext, weaponLevel: number): void {
     const merged = mergeProfile(ctx, this.weaponId, weaponLevel);

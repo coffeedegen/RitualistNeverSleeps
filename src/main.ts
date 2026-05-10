@@ -2,7 +2,6 @@ import "./style.css";
 import { Game } from "./Game";
 import { Debug } from "./utils/debug";
 import { Homepage } from "./ui/Homepage";
-import { computeHudTopStripMetrics } from "./ui/HUD";
 import { BrowserProvider } from "ethers";
 import { createAppKit } from "@reown/appkit";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
@@ -17,6 +16,7 @@ import {
   getMintPreflightIssue,
   submitRunCardMintOnRitual,
 } from "./platform/mint/RitualMint";
+import AudioManager, { type BgmDebugState, type BgmTrackName } from "./audio/AudioManager";
 
 const canvas = document.getElementById("game");
 
@@ -32,9 +32,30 @@ let walletConnectModal: WalletConnectUI | null = null;
 let currentWallet: Web3WalletData | null = null;
 let web3Manager: Web3Manager | null = null;
 let mintInFlight = false;
+type MintUiPhase = "idle" | "connecting" | "approving";
+let mintUiPhase: MintUiPhase = "idle";
 let mintPreflightIssue: string | null = null;
 let walletHeaderResizeRaf = 0;
+let removeBgmDebugListener: (() => void) | null = null;
 type DebugLaunchMode = "none" | "gameover" | "levelup";
+
+function sanitizeProductionRoute(): void {
+  if (!import.meta.env.PROD) {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  const hasDebugParam = url.searchParams.has("debug");
+  const hasNonRootPath = url.pathname !== "/" && url.pathname !== "/index.html";
+  const hasDebugLikeHash = url.hash.toLowerCase().includes("debug");
+
+  if (!hasDebugParam && !hasNonRootPath && !hasDebugLikeHash) {
+    return;
+  }
+
+  window.history.replaceState({}, "", "/");
+}
+
 function resolveDebugLaunchMode(): DebugLaunchMode {
   if (!import.meta.env.DEV) {
     return "none";
@@ -82,16 +103,6 @@ type PersistedWalletData = Pick<Web3WalletData, "address" | "chainId" | "balance
   xHandle?: string | null;
 };
 
-function clampInt(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function getConnectedWalletPanelTopOffset(): number {
-  const layout = computeHudTopStripMetrics(window.innerWidth, window.innerHeight);
-  const gapByBucket = layout.compact ? 8 : layout.tight ? 10 : 12;
-  return clampInt(layout.topStripBottom + gapByBucket, 96, 220);
-}
-
 function showUiNotice(message: string, tone: "info" | "success" | "error" = "info"): void {
   const existing = document.getElementById("ritual-ui-notice");
   if (existing) {
@@ -134,6 +145,99 @@ function showUiNotice(message: string, tone: "info" | "success" | "error" = "inf
       notice.remove();
     }
   }, tone === "error" ? 5200 : 3600);
+}
+
+function formatBgmTrackLabel(track: BgmTrackName | null): string {
+  switch (track) {
+    case "titleBGM":
+      return "TITLE";
+    case "gameBGM":
+      return "GAME";
+    case "gameOverBGM":
+      return "GAME OVER";
+    default:
+      return "OFF";
+  }
+}
+
+function ensureBgmDebugBadge(): HTMLDivElement | null {
+  if (!import.meta.env.DEV) {
+    return null;
+  }
+
+  const existing = document.getElementById("bgm-debug-badge");
+  if (existing instanceof HTMLDivElement) {
+    return existing;
+  }
+
+  const badge = document.createElement("div");
+  badge.id = "bgm-debug-badge";
+  badge.setAttribute("aria-live", "polite");
+  badge.innerHTML = `
+    <div class="bgm-debug-badge__title">BGM</div>
+    <div class="bgm-debug-badge__value">OFF</div>
+    <div class="bgm-debug-badge__meta">IDLE</div>
+  `;
+  document.body.appendChild(badge);
+  return badge;
+}
+
+function updateBgmDebugBadge(state: BgmDebugState): void {
+  const badge = ensureBgmDebugBadge();
+  if (!badge) {
+    return;
+  }
+
+  const activeTrack = state.currentTrack ?? state.requestedTrack;
+  const valueEl = badge.querySelector(".bgm-debug-badge__value");
+  const metaEl = badge.querySelector(".bgm-debug-badge__meta");
+  if (valueEl) {
+    valueEl.textContent = `BGM: ${formatBgmTrackLabel(activeTrack)}`;
+  }
+  if (metaEl) {
+    const pieces = [
+      state.unlocked ? "UNLOCKED" : "WAITING FOR INPUT",
+      state.phase.toUpperCase(),
+      state.muted ? "MUTED" : null,
+    ].filter(Boolean);
+    metaEl.textContent = pieces.join(" · ");
+  }
+
+  badge.dataset.track = activeTrack ?? "off";
+}
+
+function setupBgmDebugBadge(): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
+  removeBgmDebugListener?.();
+  const bgm = AudioManager.getInstance();
+  ensureBgmDebugBadge();
+  removeBgmDebugListener = bgm.subscribe((state) => {
+    updateBgmDebugBadge(state);
+  });
+  updateBgmDebugBadge(bgm.getDebugState());
+}
+
+function isWalletRejectionError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const maybeError = error as { code?: unknown; message?: unknown; shortMessage?: unknown };
+  const message = [
+    typeof maybeError.message === "string" ? maybeError.message : "",
+    typeof maybeError.shortMessage === "string" ? maybeError.shortMessage : "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return maybeError.code === 4001
+    || maybeError.code === "ACTION_REJECTED"
+    || message.includes("user rejected")
+    || message.includes("user denied")
+    || message.includes("rejected the request");
 }
 
 const onViewportResize = (): void => {
@@ -193,20 +297,7 @@ function connectWallet(): void {
   if (!walletConnectModal) {
     walletConnectModal = new WalletConnectUI({
       onConnect: (walletData) => {
-        currentWallet = walletData;
-        setWalletSession(walletData.address, "metamask", walletData.xHandle ?? null);
-        const persistedWallet: PersistedWalletData = {
-          address: walletData.address,
-          chainId: walletData.chainId,
-          balance: walletData.balance,
-          mode: "metamask",
-          xHandle: walletData.xHandle ?? null,
-        };
-        localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(persistedWallet));
-        savePlayerProfile({ xHandle: walletData.xHandle ?? null });
-        WalletContext.setWallet(walletData, web3Manager);
-        Debug.log(`Wallet connected: ${walletData.address}`);
-        updateUIWithWalletInfo();
+        persistConnectedWallet(walletData);
         mountHomepage();
       },
       onError: (error) => {
@@ -218,6 +309,40 @@ function connectWallet(): void {
   const modal = walletConnectModal.render();
   document.body.appendChild(modal);
   walletConnectModal.show();
+}
+
+function persistConnectedWallet(walletData: Web3WalletData): void {
+  currentWallet = walletData;
+  setWalletSession(walletData.address, "metamask", walletData.xHandle ?? null);
+  const persistedWallet: PersistedWalletData = {
+    address: walletData.address,
+    chainId: walletData.chainId,
+    balance: walletData.balance,
+    mode: "metamask",
+    xHandle: walletData.xHandle ?? null,
+  };
+  localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(persistedWallet));
+  savePlayerProfile({ xHandle: walletData.xHandle ?? null });
+  WalletContext.setWallet(walletData, web3Manager);
+  Debug.log(`Wallet connected: ${walletData.address}`);
+  updateUIWithWalletInfo();
+}
+
+async function ensureWalletConnectedForMint(): Promise<Web3WalletData> {
+  if (currentWallet && web3Manager?.isConnected()) {
+    return currentWallet;
+  }
+
+  if (!web3Manager) {
+    throw new Error("Wallet manager is not initialized.");
+  }
+
+  const walletData = await web3Manager.connectMetaMask();
+  persistConnectedWallet(walletData);
+  if (homepage) {
+    homepage.refreshWalletAddress();
+  }
+  return walletData;
 }
 
 function disconnectWallet(): void {
@@ -244,11 +369,10 @@ function updateUIWithWalletInfo(): void {
 
   const headerDiv = document.createElement("div");
   headerDiv.id = "wallet-info-header";
-  const walletTopOffset = currentWallet ? getConnectedWalletPanelTopOffset() : 10;
   headerDiv.style.cssText = `
     position: fixed;
-    top: ${walletTopOffset}px;
     right: 10px;
+    bottom: 10px;
     background: rgba(0, 0, 0, 0.84);
     border: 1px solid rgba(127, 224, 168, 0.28);
     border-radius: 14px;
@@ -258,6 +382,7 @@ function updateUIWithWalletInfo(): void {
     z-index: 9999;
     font-family: 'JetBrains Mono', monospace;
     min-width: 210px;
+    max-width: min(220px, 40vw);
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(10px);
   `;
@@ -445,14 +570,34 @@ function mountGame(): void {
       }
 
       if (mintInFlight) {
-        showUiNotice("Mint request already in progress. Check MetaMask.", "info");
+        showUiNotice(
+          mintUiPhase === "connecting"
+            ? "Wallet connection already in progress. Check MetaMask."
+            : "Mint request already in progress. Check MetaMask.",
+          "info",
+        );
         return;
       }
 
       mintInFlight = true;
-      showUiNotice("Open MetaMask to approve the mint transaction.", "info");
+      mintUiPhase = "connecting";
+      showUiNotice("Preparing wallet connection and mint approval in MetaMask.", "info");
 
-      void submitRunCardMintOnRitual(summary, currentWallet, web3Manager)
+      void ensureWalletConnectedForMint()
+        .then(async (walletData) => {
+          mintUiPhase = "approving";
+          showUiNotice("Open MetaMask to approve the mint transaction.", "info");
+          try {
+            const submission = await submitRunCardMintOnRitual(summary, walletData, web3Manager);
+            return submission;
+          } catch (error: unknown) {
+            if (isWalletRejectionError(error)) {
+              mintUiPhase = "idle";
+              showUiNotice("Mint approval was cancelled. You can try again anytime.", "info");
+            }
+            throw error;
+          }
+        })
         .then(async (submission) => {
           showUiNotice("Transaction submitted. Waiting for confirmation...", "info");
           const receipt = await submission.waitForReceipt();
@@ -461,15 +606,29 @@ function mountGame(): void {
           showUiNotice(`Mint succeeded.\nTx: ${txHash}`, "success");
         })
         .catch((error: unknown) => {
+          if (mintUiPhase !== "idle") {
+            mintUiPhase = "idle";
+          }
           const message = error instanceof Error ? error.message : "Mint failed.";
           console.error("Mint failed:", error);
-          showUiNotice(`Mint failed: ${message}`, "error");
+          if (!isWalletRejectionError(error)) {
+            showUiNotice(`Mint failed: ${message}`, "error");
+          }
         })
         .finally(() => {
+          mintUiPhase = "idle";
           mintInFlight = false;
         });
     },
     isMintEnabled: () => mintPreflightIssue === null,
+    isMintBusy: () => mintUiPhase !== "idle",
+    getMintButtonLabel: () => (
+      mintUiPhase === "connecting"
+        ? "Connecting wallet..."
+        : mintUiPhase === "approving"
+          ? "Awaiting mint approval..."
+          : "Mint this Card"
+    ),
     getMintDisabledReason: () => mintPreflightIssue,
   });
   game.start();
@@ -502,7 +661,9 @@ function requestQuit(): void {
 
 // Show homepage first. Game starts only after "Initiate Ritual" is clicked.
 async function bootstrap(): Promise<void> {
+  sanitizeProductionRoute();
   window.addEventListener("resize", onViewportResize);
+  setupBgmDebugBadge();
   initializeAppKit();
   initializeWeb3();
   mintPreflightIssue = getMintPreflightIssue();
@@ -524,5 +685,7 @@ if (import.meta.hot) {
     }
     homepage?.dispose();
     game?.dispose();
+    removeBgmDebugListener?.();
+    removeBgmDebugListener = null;
   });
 }

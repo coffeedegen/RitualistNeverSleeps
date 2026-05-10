@@ -59,6 +59,47 @@ function clampToArena(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clampToArena((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function hash2d(x: number, y: number, seed: number): number {
+  const value = Math.sin((x * 127.1 + y * 311.7 + seed * 74.7) * 0.0174533) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function valueNoise2d(x: number, y: number, scale: number, seed: number): number {
+  const nx = x / scale;
+  const ny = y / scale;
+  const x0 = Math.floor(nx);
+  const y0 = Math.floor(ny);
+  const tx = nx - x0;
+  const ty = ny - y0;
+
+  const n00 = hash2d(x0, y0, seed);
+  const n10 = hash2d(x0 + 1, y0, seed);
+  const n01 = hash2d(x0, y0 + 1, seed);
+  const n11 = hash2d(x0 + 1, y0 + 1, seed);
+
+  const sx = smoothstep(0, 1, tx);
+  const sy = smoothstep(0, 1, ty);
+  const ix0 = lerp(n00, n10, sx);
+  const ix1 = lerp(n01, n11, sx);
+  return lerp(ix0, ix1, sy);
+}
+
+function layeredNoise2d(x: number, y: number, seed: number): number {
+  const coarse = valueNoise2d(x, y, 7.5, seed);
+  const medium = valueNoise2d(x + 19.3, y + 7.1, 3.75, seed + 17);
+  const fine = valueNoise2d(x - 11.4, y + 13.9, 1.9, seed + 31);
+  return coarse * 0.58 + medium * 0.29 + fine * 0.13;
+}
+
 export function createGeneratedTilemap(): GeneratedTilemapData {
   const tiles: RitualTileId[] = new Array(MAP_WIDTH * MAP_HEIGHT);
   const props: GeneratedPropPlacement[] = [];
@@ -66,37 +107,50 @@ export function createGeneratedTilemap(): GeneratedTilemapData {
   const cx = Math.floor(MAP_WIDTH / 2);
   const cy = Math.floor(MAP_HEIGHT / 2);
 
-  const patchNoise = (x: number, y: number, scale: number): number => {
-    const nx = Math.floor(x / scale);
-    const ny = Math.floor(y / scale);
-    const seed = Math.abs((nx * 73856093) ^ (ny * 19349663) ^ 0x5f3759df);
-    return seed % 100;
+  const pickStoneVariant = (detailNoise: number, distress: number): RitualTileId => {
+    const adjusted = detailNoise + distress * 0.08;
+    if (adjusted < 0.86) return "base_floor";
+    if (adjusted < 0.94) return "cracked_floor";
+    if (adjusted < 0.985) return "broken_tile";
+    return "gravel_tile";
   };
 
-  const pickFloor = (x: number, y: number, dx: number, dy: number): RitualTileId => {
+  const pickOrganicFloor = (x: number, y: number, dx: number, dy: number): RitualTileId => {
     const ring = Math.max(Math.abs(dx), Math.abs(dy));
-    const coarse = patchNoise(x, y, 3);
-    const medium = patchNoise(x + 11, y + 7, 2);
-    const fine = patchNoise(x + 17, y + 19, 1);
+    const radial = Math.hypot(dx, dy);
+    const moisture = layeredNoise2d(x + 3.7, y - 8.1, 11);
+    const roughness = layeredNoise2d(x - 9.2, y + 4.4, 29);
+    const growth = layeredNoise2d(x + 14.6, y + 15.2, 53);
+    const detail = layeredNoise2d(x - 21.1, y - 5.9, 71);
+    const distress = smoothstep(7, 18, radial);
 
-    if (ring > 13) {
-      if (coarse < 16) return "mud_floor";
-      if (coarse < 34) return "gravel_tile";
-      if (medium < 18) return "moss_floor";
-      if (fine < 10) return "broken_tile";
-      return "base_floor";
+    if (ring <= 4) {
+      return pickStoneVariant(detail, 0.12);
     }
 
-    if (ring > 8) {
-      if (coarse < 12) return "gravel_tile";
-      if (medium < 18) return "cracked_floor";
-      if (fine < 8) return "blood_stain";
-      return "base_floor";
+    if (ring <= 8) {
+      if (growth > 0.76 && moisture > 0.58) {
+        return "moss_floor";
+      }
+      if (detail > 0.965 && roughness > 0.62) {
+        return "blood_stain";
+      }
+      return pickStoneVariant(detail, distress * 0.4);
     }
 
-    if (medium < 10) return "cracked_floor";
-    if (fine < 6) return "blood_stain";
-    return "base_floor";
+    if (moisture > 0.68 && growth > 0.66) {
+      return growth > 0.8 ? "grass_tile" : "moss_floor";
+    }
+
+    if (roughness > 0.74 && moisture < 0.52) {
+      return roughness > 0.84 ? "mud_floor" : "gravel_tile";
+    }
+
+    if (detail > 0.91 && distress > 0.45) {
+      return pickStoneVariant(detail, distress);
+    }
+
+    return pickStoneVariant(detail, distress * 0.7);
   };
 
   for (let y = 0; y < MAP_HEIGHT; y += 1) {
@@ -104,7 +158,10 @@ export function createGeneratedTilemap(): GeneratedTilemapData {
       const dx = x - cx;
       const dy = y - cy;
       const manhattan = Math.abs(dx) + Math.abs(dy);
-      let tile: RitualTileId = pickFloor(x, y, dx, dy);
+      let tile: RitualTileId = pickOrganicFloor(x, y, dx, dy);
+      const moisture = layeredNoise2d(x + 3.7, y - 8.1, 11);
+      const growth = layeredNoise2d(x + 14.6, y + 15.2, 53);
+      const detail = layeredNoise2d(x - 21.1, y - 5.9, 71);
 
       if (x === 0 || y === 0 || x === MAP_WIDTH - 1 || y === MAP_HEIGHT - 1) {
         tile = "void_tile";
@@ -122,10 +179,12 @@ export function createGeneratedTilemap(): GeneratedTilemapData {
         tile = "rune_floor";
       } else if (manhattan === 6 || manhattan === 7) {
         tile = "sigil_tile";
-      } else if ((x + y) % 17 === 0) {
-        tile = "grass_tile";
-      } else if ((x * 3 + y * 5) % 29 === 0) {
-        tile = "mud_floor";
+      } else if (Math.max(Math.abs(dx), Math.abs(dy)) > 11) {
+        if (growth > 0.82 && moisture > 0.65) {
+          tile = "grass_tile";
+        } else if (detail > 0.96 && moisture < 0.44) {
+          tile = "mud_floor";
+        }
       }
 
       if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
