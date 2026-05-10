@@ -1,0 +1,18 @@
+node_modules/
+dist/
+
+# Local environment secrets
+.env
+.env.local
+.env.*.local
+.envrc
+
+# Key / secret artifacts
+*.key
+*.pem
+*.p12
+secrets/
+keys/
+
+# Foundry runtime artifacts (may include tx calldata/account metadata)
+broadcast/

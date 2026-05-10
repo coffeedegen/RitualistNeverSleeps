@@ -1,0 +1,31 @@
+{
+  "image": "public/assets/weapons/weapon_icons_64_atlas.png",
+  "cell": { "w": 64, "h": 64 },
+  "grid": { "cols": 6, "rows": 4 },
+  "sprites": [
+    { "id": "lash", "x": 0, "y": 0, "w": 64, "h": 64 },
+    { "id": "crimson_lash", "x": 64, "y": 0, "w": 64, "h": 64 },
+    { "id": "arcane_bolt", "x": 128, "y": 0, "w": 64, "h": 64 },
+    { "id": "sanctified_bolt", "x": 192, "y": 0, "w": 64, "h": 64 },
+    { "id": "shard_blade", "x": 256, "y": 0, "w": 64, "h": 64 },
+    { "id": "thousand_shards", "x": 320, "y": 0, "w": 64, "h": 64 },
+    { "id": "cleaver", "x": 0, "y": 64, "w": 64, "h": 64 },
+    { "id": "reaper_spiral", "x": 64, "y": 64, "w": 64, "h": 64 },
+    { "id": "sanctum_cross", "x": 128, "y": 64, "w": 64, "h": 64 },
+    { "id": "celestial_blade", "x": 192, "y": 64, "w": 64, "h": 64 },
+    { "id": "orbiting_tome", "x": 256, "y": 64, "w": 64, "h": 64 },
+    { "id": "nocturne_tome", "x": 320, "y": 64, "w": 64, "h": 64 },
+    { "id": "ember_wand", "x": 0, "y": 128, "w": 64, "h": 64 },
+    { "id": "inferno_burst", "x": 64, "y": 128, "w": 64, "h": 64 },
+    { "id": "warding_aura", "x": 128, "y": 128, "w": 64, "h": 64 },
+    { "id": "life_drain", "x": 192, "y": 128, "w": 64, "h": 64 },
+    { "id": "sanctified_tide", "x": 256, "y": 128, "w": 64, "h": 64 },
+    { "id": "deluge", "x": 320, "y": 128, "w": 64, "h": 64 },
+    { "id": "rune_shard", "x": 0, "y": 192, "w": 64, "h": 64 },
+    { "id": "final_sigil", "x": 64, "y": 192, "w": 64, "h": 64 },
+    { "id": "storm_ring", "x": 128, "y": 192, "w": 64, "h": 64 },
+    { "id": "tempest_loop", "x": 192, "y": 192, "w": 64, "h": 64 },
+    { "id": "sigil_nova", "x": 256, "y": 192, "w": 64, "h": 64 },
+    { "id": "lunar_bloom", "x": 320, "y": 192, "w": 64, "h": 64 }
+  ]
+}
